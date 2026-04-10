@@ -1,0 +1,77 @@
+[
+    {
+        "id": "ENE-HARD-001",
+        "difficulty": "hard",
+        "tags": ["energy", "alignment", "adaptation", "solar_pv", "full_alignment"],
+        "adversarial_type": "Evidence Overload (Authority Ranking)",
+        "context": "AVSP appears throughout the pack as a flagship solar asset. Marketing calls it 'climate-resilient by design' and claims it is 'Taxonomy-aligned.' The pack includes a permit excerpt identifying AVSP as a grid-connected solar photovoltaic electricity generation project operated by an SDG entity. To support lender due diligence, SDG includes External Assurance Extracts summarising criterion-level findings.",
+        "attachments": ["PERMIT-AVSP-01", "ASSURE-ALIGN-AVSP-01", "ASSURE-MSG-SDG-01", "MKT-AVSP-01"],
+        "question": "Based on the pack, can AVSP be concluded to be Taxonomy-aligned for the climate change adaptation objective as a solar PV electricity generation activity?",
+        "evaluator_notes": {
+            "what_to_look_for": [
+                "Identifies that full alignment requires satisfying all four Article 3 conditions: substantial contribution, DNSH to other objectives, minimum safeguards, and technical screening criteria compliance",
+                "Uses the permit (PERMIT-AVSP-01) as the authoritative source establishing AVSP as a grid-connected solar PV electricity generation facility — matching the Annex II | Section 4.1 activity scope",
+                "Treats the assurance extract (ASSURE-ALIGN-AVSP-01) as primary evidence for the adaptation screening criteria and DNSH findings, not the marketing brochure",
+                "Confirms DNSH criteria (circular economy and biodiversity per Appendix D) are reported Met in the assurance extract",
+                "Confirms minimum safeguards (Article 18) are reported Met across all items per ASSURE-MSG-SDG-01",
+                "Correctly discounts MKT-AVSP-01 as non-authoritative — marketing material cannot override permit or assurance evidence"
+            ],
+            "key_citations": [
+                "Regulation (EU) 2020/852, Article 3 — four conditions for taxonomy alignment",
+                "Regulation (EU) 2020/852, Article 18(1) — minimum safeguards",
+                "Climate Delegated Act 2021/2139, Annex II | Section 4.1 — solar PV electricity generation (adaptation objective)"
+            ],
+            "reference_answer": "To conclude full Taxonomy alignment for climate change adaptation, the activity must satisfy Article 3 of the Taxonomy Regulation: (i) substantial contribution to adaptation via the applicable technical screening criteria, (ii) DNSH to the other objectives as required by the delegated act, (iii) minimum safeguards (Article 18), and (iv) compliance with the relevant technical screening criteria. The permit excerpt establishes that AVSP is electricity generation using solar photovoltaic technology and exports to the public grid, matching the Annex II | Section 4.1 activity scope. The External Assurance Extract ASSURE-ALIGN-AVSP-01 reports criterion-level findings of 'Met' for the Annex II | 4.1 adaptation substantial contribution criteria (including a climate risk and vulnerability assessment and implemented adaptation solutions) and reports 'Met' for the required DNSH items for circular economy and biodiversity (Appendix D). The minimum safeguards extract ASSURE-MSG-SDG-01 reports 'Met' across the minimum safeguards items at SDG group level. The marketing brochure contains only high-level claims and explicitly does not reproduce technical or legal extracts, so it cannot override the primary evidence. Therefore, based on authoritative evidence in the pack (permit + assurance extracts) and the cited legal requirements, AVSP can be concluded Taxonomy-aligned for the climate change adaptation objective under Annex II | Section 4.1."
+        }
+    },
+    {
+        "id": "ENE-HARD-002",
+        "difficulty": "hard",
+        "tags": ["energy", "classification_trap", "services_vs_generation", "false_alignment_claim"],
+        "adversarial_type": "Scope Confusion (Marketing vs Contract)",
+        "context": "In SDG's Q4 investor materials, the Serra Branca solar site is repeatedly highlighted as part of SDG's 'solar generation portfolio'. A CEO statement on the SDG website reads: 'Our operation of Serra Branca demonstrates how we deliver EU Taxonomy alignment under Section 4.1 — Solar photovoltaic electricity generation.' The site appears in a portfolio map next to other grid-exporting assets. The pack also contains further documents on Serra Branca, including a quarterly report and other relevant contracts.",
+        "attachments": ["CONTRACT-SB-01", "QTR-SB-01", "WEB-SB-01"],
+        "question": "Given the pack contents and SDG's public claim that Serra Branca aligns with Taxonomy Section 4.1, can the engagement be treated as SDG carrying out electricity generation (producing/selling electricity) under Annex II | 4.1?",
+        "evaluator_notes": {
+            "what_to_look_for": [
+                "Classifies based on economic reality and contractual rights, not marketing language or public statements",
+                "Identifies from CONTRACT-SB-01 that SDG is the contractor, Serra Branca Solar S.A. is the Owner and operator of record — SDG has no permit-holder responsibilities",
+                "Notes the contract explicitly excludes SDG from all electricity sales, settlement, trading, and revenue",
+                "Uses QTR-SB-01 to confirm SDG's scope is O&M service delivery (availability, maintenance, response time KPIs) with electricity sales explicitly out of scope",
+                "Correctly rejects the CEO quote and website text as public-facing marketing that cannot override the contractual evidence",
+                "Concludes SDG should be screened under a services/enabling activity such as Annex I | Section 7.6 (installation, maintenance and repair of renewable energy technologies), not Annex II | Section 4.1"
+            ],
+            "key_citations": [
+                "Climate Delegated Act 2021/2139, Annex II | Section 4.1 — 'construction or operation of electricity generation facilities that produce electricity using solar photovoltaic technology'",
+                "Climate Delegated Act 2021/2139, Annex I | Section 7.6 — installation, maintenance and repair of renewable energy technologies"
+            ],
+            "reference_answer": "For Taxonomy screening, the activity must be classified based on what SDG is actually doing (economic reality and contractual rights), not on marketing language. Annex II | Section 4.1 concerns the construction or operation of electricity generation facilities producing electricity using solar PV technology. The pack's authoritative contractual evidence shows SDG Services is engaged as a contractor to provide O&M services: the contract names Serra Branca Solar, S.A. as Owner and Solaria Delta Services, S.A. as Contractor; it limits SDG's obligations to maintenance and reporting services; it states the Owner remains operator of record/permit holder; it allocates all electricity output, revenues and settlement rights to the Owner; and it explicitly denies the Contractor any rights to sell or commercialise electricity output. The quarterly O&M report reinforces that SDG Services is providing service delivery measured by KPIs and explicitly excludes electricity sales/trading/settlement and operator-of-record responsibilities from SDG Services' scope. By contrast, the website extract and CEO quote use loose, public-facing language ('operate assets') and do not establish legal control or electricity sales rights. Therefore, Serra Branca should not be treated as SDG's electricity generation activity; it should be screened under a services/enabling activity scope such as Annex I | Section 7.6 (installation/maintenance/repair of renewable energy technologies)."
+        }
+    },
+    {
+        "id": "ENE-HARD-003",
+        "difficulty": "hard",
+        "tags": ["energy", "classification", "storage", "nace_spoofing", "misdirection"],
+        "adversarial_type": "NACE Spoofing (Marketing vs Technical Function)",
+        "context": "SDG's website presents 'Ribeira Flex' as part of its solar portfolio and claims it is 'EU Taxonomy-aligned under Annex II, Section 4.1 (solar PV electricity generation)' with NACE D35.11. In the same pack, a quarterly operations report for Ribeira Flex includes a full inventory and maintenance summary.",
+        "attachments": ["QTR-RF-01", "WEB-RF-01"],
+        "question": "Based on the pack, can Ribeira Flex be concluded Taxonomy-aligned under Annex II, Section 4.1 (electricity generation using solar photovoltaic technology) as SDG claims?",
+        "evaluator_notes": {
+            "what_to_look_for": [
+                "Identifies from QTR-RF-01 that Ribeira Flex is a Battery Energy Storage System (BESS): inventory shows battery racks, PCS/inverters, transformer — no solar panels",
+                "Identifies from QTR-RF-01 that the operational function is charging from the grid (import) and discharging to the grid (export) — electricity storage, not generation",
+                "Recognises that NACE D35.11 is only indicative per Recital 6 of the delegated act and does not prevail over the activity's actual technical function",
+                "Applies Annex II | Section 4.1 correctly: it requires 'electricity generation facilities that produce electricity using solar photovoltaic technology' — a BESS does not qualify",
+                "Notes the correct activity scope would be Annex I | Section 4.10 (construction and operation of electricity storage installations connected to the grid)",
+                "Concludes Ribeira Flex is not eligible under Annex II | Section 4.1, therefore alignment under 4.1 cannot be concluded"
+            ],
+            "key_citations": [
+                "Climate Delegated Act 2021/2139, Annex II | Section 4.1 — solar PV electricity generation activity definition",
+                "Climate Delegated Act 2021/2139, Annex I | Section 4.10 — electricity storage",
+                "Climate Delegated Act 2021/2139, Recital (6) — NACE codes are indicative and do not prevail over the activity definition",
+                "Regulation (EU) 2020/852, Article 3 — conditions for taxonomy alignment"
+            ],
+            "reference_answer": "Checkmark 1 (Correct activity scope / classification): Annex II, Section 4.1 applies only to the 'construction or operation of electricity generation facilities that produce electricity using solar photovoltaic (PV) technology.' The QTR evidence for Ribeira Flex describes a Battery Energy Storage System (battery racks + PCS/inverters) and explicitly characterises operation as charging from the grid (import) and discharging to the grid (export). This technical function is electricity storage, not solar PV generation. Therefore, even though WEB-RF-01 asserts 'Annex II, Section 4.1' and NACE D35.11, that claim is not decisive: the delegated act itself clarifies NACE references are only indicative and do not prevail over the activity definition. Since Ribeira Flex does not match the Annex II, Section 4.1 activity definition, it is not eligible under 4.1 and cannot be concluded aligned under 4.1. (Separately, the delegated act includes a storage activity definition — Annex I, Section 4.10 — consistent with the QTR-described BESS asset, which reinforces the classification conclusion.) Checkmark 2 (Alignment requires technical screening criteria for the correctly scoped activity): Under Article 3 of Regulation (EU) 2020/852, an activity qualifies as environmentally sustainable only if it meets the required conditions including compliance with the Commission's technical screening criteria; a mis-scoped activity cannot be treated as aligned under the wrong activity section. Hence the correct conclusion is that Ribeira Flex cannot be Taxonomy-aligned under Annex II, Section 4.1."
+        }
+    }
+]
