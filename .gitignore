@@ -41,3 +41,11 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+
+# Eval run outputs — local artifacts, not committed
+runs/*
+!runs/.gitkeep
+
+# Claude
+CLAUDE.md

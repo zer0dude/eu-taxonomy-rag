@@ -1,0 +1,63 @@
+[
+  {
+    "id": "q1",
+    "difficulty": "baseline",
+    "tags": ["energy", "wind", "offshore", "eligibility", "alignment", "dnsh"],
+    "adversarial_type": "None",
+    "context": "",
+    "question": "Does offshore wind power generation qualify as a sustainable activity under the EU Taxonomy Climate Delegated Act, and what is the primary technical screening criterion it must meet?",
+    "evaluator_notes": {
+      "what_to_look_for": [
+        "Activity 4.3 covers electricity generation from wind power including offshore",
+        "Wind power is considered to substantially contribute to climate change mitigation without a lifecycle GHG threshold",
+        "DNSH criteria apply across all six environmental objectives",
+        "The activity must comply with the minimum social safeguards in Article 18"
+      ],
+      "key_citations": [
+        "Climate Delegated Act 2021/2139, Annex I, Activity 4.3 — Electricity generation from wind power"
+      ],
+      "reference_answer": ""
+    }
+  },
+  {
+    "id": "q2",
+    "difficulty": "baseline",
+    "tags": ["energy", "solar_pv", "dnsh", "biodiversity", "eligibility"],
+    "adversarial_type": "None",
+    "context": "",
+    "question": "What does 'Do No Significant Harm' to biodiversity mean for a solar photovoltaic electricity generation project under the EU Taxonomy?",
+    "evaluator_notes": {
+      "what_to_look_for": [
+        "Activity 4.1 covers electricity generation from solar photovoltaic technology",
+        "DNSH to biodiversity requires an environmental impact assessment where required by law",
+        "For projects in or near biodiversity-sensitive areas additional requirements apply",
+        "The activity must not lead to significant deterioration of protected habitats"
+      ],
+      "key_citations": [
+        "Climate Delegated Act 2021/2139, Annex I, Activity 4.1, DNSH criterion 6 — Biodiversity"
+      ],
+      "reference_answer": ""
+    }
+  },
+  {
+    "id": "q3",
+    "difficulty": "baseline",
+    "tags": ["minimum_safeguards", "alignment", "cross_document", "article_18"],
+    "adversarial_type": "None",
+    "context": "",
+    "question": "What are the minimum safeguards that all EU Taxonomy-aligned activities must comply with regardless of their technical screening criteria?",
+    "evaluator_notes": {
+      "what_to_look_for": [
+        "Article 18 of Regulation 2020/852 defines minimum safeguards",
+        "Alignment with OECD Guidelines for Multinational Enterprises is required",
+        "Alignment with UN Guiding Principles on Business and Human Rights is required",
+        "The ILO core labour conventions must be respected",
+        "Minimum safeguards apply in addition to the technical screening criteria"
+      ],
+      "key_citations": [
+        "EU Taxonomy Regulation 2020/852, Article 18 — Minimum safeguards"
+      ],
+      "reference_answer": ""
+    }
+  }
+]
