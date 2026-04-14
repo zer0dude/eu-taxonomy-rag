@@ -3,27 +3,16 @@
 Returns a fixed hardcoded answer regardless of any input.
 Useful for testing the eval pipeline end-to-end before real agents exist.
 
-Also defines AgentProtocol — the interface all agents must satisfy.
+AgentProtocol has moved to agents/base.py.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from taxonomy_rag.readers.base import AttachmentInfo  # noqa: F401 (re-exported for convenience)
 
 
-@runtime_checkable
-class AgentProtocol(Protocol):
-    """Interface that all eval-compatible agents must satisfy."""
-
-    def answer(self, question: str, context: str = "", prompt: str = "") -> str:
-        """Return an answer string for the given question.
-
-        Args:
-            question: The question to answer.
-            context: Optional inline context from the question file (e.g. scenario description).
-            prompt: The system prompt loaded from a prompt file.
-        """
-        ...
+def get_agent() -> "MockAgent":
+    return MockAgent()
 
 
 class MockAgent:
@@ -39,5 +28,11 @@ class MockAgent:
         "Replace with a real agent to get meaningful answers."
     )
 
-    def answer(self, question: str, context: str = "", prompt: str = "") -> str:  # noqa: ARG002
+    def answer(
+        self,
+        question: str,
+        context: str = "",
+        prompt: str = "",
+        attachments: list[AttachmentInfo] = [],
+    ) -> str:  # noqa: ARG002
         return self.ANSWER

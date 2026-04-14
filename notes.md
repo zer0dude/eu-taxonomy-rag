@@ -20,13 +20,40 @@ Build incrementally. Each step should be testable and produce a measurable resul
 
 ## Current status
 
-- [ ] Evaluation baseline
-- [ ] Bare LLM baseline
+- [x] Evaluation baseline
+- [ ] Bare LLM baseline  ← in progress
 - [ ] PDF spike
 - [ ] Naive ingestion
 - [ ] Naive RAG
 - [ ] Retrieval iteration
 - [ ] Agent layer
+
+---
+
+## Eval infrastructure (completed)
+
+**scripts/evaluate.py** — modular eval script. Three interchangeable axes:
+- `--questions` — any questions JSON (simple_v1, golden_dataset_v1, hard_01, ...)
+- `--prompt` — any prompt file from `prompts/`
+- `--agent` — any registered agent name (mock, llm_direct, ...)
+
+Each run saves to `runs/{YYYYMMDD}_{HHMMSS}_{agent}_{question_set}/`:
+- `metadata.json` — machine-readable run summary
+- `outcomes.csv` — one row per question; human fills `human_score` and `human_notes`
+
+**Question sets (no attachments — usable now):**
+- `eval/simple_v1/questions.json` — 10 manufacturing eligibility questions, adversarial
+- `eval/golden_dataset_v1/questions.json` — 3 baseline wind/solar/safeguards questions (converted from `golden_dataset.json`)
+
+**Question sets (attachments required — not usable yet):**
+- `eval/hard_01/questions.json` — 3 adversarial energy questions with PDF attachments
+
+**Agents:**
+- `mock` — hardcoded fixed string; validates pipeline plumbing
+- `llm_direct` — bare Anthropic API call (Claude Haiku 4.5), system prompt from file, no retrieval
+
+**Prompts:**
+- `prompts/base_v1.txt` — EU Taxonomy expert, eligibility vs alignment framing
 
 ---
 
@@ -44,5 +71,5 @@ _Things to investigate or decide._
 
 ## Next steps
 
-- Refine golden questions and evaluation scoring
-- Run bare LLM baseline on current golden questions
+- Run bare LLM baseline (llm_direct + base_v1) on simple_v1 and golden_dataset_v1; human-score the outcomes CSV
+- PDF spike in a notebook: extract and inspect raw text from 2021_2139_EN.pdf

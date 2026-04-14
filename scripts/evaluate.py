@@ -27,16 +27,41 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 RUNS_DIR = REPO_ROOT / "runs"
 
+# Preferred attachment formats in priority order (first found wins)
+_ATTACHMENT_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".csv"]
+
 
 # ---------------------------------------------------------------------------
 # Agent factory
 # ---------------------------------------------------------------------------
 
 def _get_agent(name: str):
-    if name == "mock":
-        from taxonomy_rag.agents.mock import MockAgent
-        return MockAgent()
-    raise ValueError(f"Unknown agent: {name!r}. Available: mock")
+    """Dynamically import taxonomy_rag.agents.<name> and call its get_agent().
+
+    Convention: every agent module must expose a module-level get_agent()
+    function that returns an object satisfying AgentProtocol. Adding a new
+    agent only requires creating a new file — evaluate.py never needs editing.
+    """
+    import importlib
+    from dotenv import load_dotenv
+    load_dotenv()
+    try:
+        module = importlib.import_module(f"taxonomy_rag.agents.{name}")
+    except ModuleNotFoundError:
+        print(
+            f"Error: no agent module 'taxonomy_rag/agents/{name}.py' found.\n"
+            f"Create the file and add a get_agent() function to register it.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not hasattr(module, "get_agent"):
+        print(
+            f"Error: taxonomy_rag/agents/{name}.py has no get_agent() function.\n"
+            f"Add 'def get_agent(): return YourAgent()' to the module.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return module.get_agent()
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +104,60 @@ def _get_evaluator_notes(item: dict) -> dict:
     }
 
 
+def _resolve_attachments(item: dict, questions_path: Path) -> list:
+    """Resolve attachment names in a question item to AttachmentInfo objects.
+
+    Convention: attachments live at
+        eval/{question_set}/attachments/{question_id}/{name}{ext}
+
+    Prefers .pdf over .docx over .xlsx. Prints a warning if a listed
+    attachment cannot be found on disk (non-fatal).
+
+    Returns an empty list if the question has no attachments field.
+    """
+    from taxonomy_rag.readers.base import AttachmentInfo
+
+    attachment_names: list[str] = item.get("attachments", [])
+    if not attachment_names:
+        return []
+
+    question_id = item["id"]
+    attachment_dir = questions_path.parent / "attachments" / question_id
+
+    result: list[AttachmentInfo] = []
+    for name in attachment_names:
+        found = False
+        for ext in _ATTACHMENT_EXTENSIONS:
+            candidate = attachment_dir / f"{name}{ext}"
+            if candidate.exists():
+                result.append(AttachmentInfo(
+                    name=name,
+                    file_type=ext.lstrip("."),
+                    size_bytes=candidate.stat().st_size,
+                    path=str(candidate),
+                ))
+                found = True
+                break
+        if not found:
+            print(
+                f"  Warning: attachment '{name}' listed in question '{question_id}' "
+                f"not found under {attachment_dir}",
+                file=sys.stderr,
+            )
+
+    return result
+
+
+def _format_attachments_col(attachments: list) -> str:
+    """Format attachment list as a readable string for the CSV column."""
+    if not attachments:
+        return ""
+    return "; ".join(
+        f"{a.name} ({a.file_type}, {a.size_bytes // 1024} KB)"
+        for a in attachments
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -100,8 +179,7 @@ def main() -> None:
     parser.add_argument(
         "--agent",
         required=True,
-        choices=["mock"],
-        help="Agent to use",
+        help="Agent to use. Must match a module in src/taxonomy_rag/agents/ that exposes get_agent().",
     )
     args = parser.parse_args()
 
@@ -141,7 +219,19 @@ def main() -> None:
     for item in questions:
         context = item.get("context", "")
         question = item["question"]
-        answer = agent.answer(question=question, context=context, prompt=prompt)
+        attachments = _resolve_attachments(item, questions_path)
+
+        print(f"[{item['id']}] {question[:80]}")
+        if attachments:
+            for a in attachments:
+                print(f"  attachment: {a.name} ({a.file_type}, {a.size_bytes // 1024} KB)")
+
+        answer = agent.answer(
+            question=question,
+            context=context,
+            prompt=prompt,
+            attachments=attachments,
+        )
 
         notes = _get_evaluator_notes(item)
         rows.append({
@@ -151,6 +241,7 @@ def main() -> None:
             "adversarial_type": item.get("adversarial_type", ""),
             "context": context,
             "question": question,
+            "attachments": _format_attachments_col(attachments),
             "what_to_look_for": " | ".join(notes["what_to_look_for"]),
             "key_citations": " | ".join(notes["key_citations"]),
             "reference_answer": notes["reference_answer"],
@@ -181,6 +272,7 @@ def main() -> None:
         "adversarial_type",
         "context",
         "question",
+        "attachments",
         "what_to_look_for",
         "key_citations",
         "reference_answer",
@@ -189,13 +281,13 @@ def main() -> None:
         "human_notes",
     ]
     csv_path = run_dir / "outcomes.csv"
-    with open(csv_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
 
     # Summary to stdout
-    print(f"Run:       {run_id}")
+    print(f"\nRun:       {run_id}")
     print(f"Agent:     {args.agent}")
     print(f"Questions: {questions_path.relative_to(REPO_ROOT)}  ({len(rows)} items)")
     print(f"Prompt:    {prompt_path.relative_to(REPO_ROOT)}")

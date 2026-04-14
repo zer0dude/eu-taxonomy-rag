@@ -21,9 +21,14 @@ and agent designs. Prioritise clean interfaces and swappability over cleverness.
 - Do not implement ingestion parsers or chunkers without being asked — these are
   the core experiments and the developer fills them in deliberately.
 
+## Project state
+notes.md tracks the experimental plan, current status, and next steps.
+Read it at the start of a session to get oriented quickly.
+
 ## Running the project
 ```
 docker compose up -d          # start Postgres
 uv run python scripts/ingest.py data/raw/2021_2139_EN.pdf
-uv run python scripts/evaluate.py
+uv run python scripts/evaluate.py --questions eval/simple_v1/questions.json \
+    --prompt prompts/base_v1.txt --agent llm_direct
 ```
