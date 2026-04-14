@@ -16,6 +16,7 @@ import os
 import anthropic
 
 from taxonomy_rag.readers.base import AttachmentInfo
+from taxonomy_rag.tracing.base import NullTracer
 
 
 _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -49,6 +50,7 @@ class LLMDirectAgent:
         context: str = "",
         prompt: str = "",
         attachments: list[AttachmentInfo] = [],
+        tracer: NullTracer = NullTracer(),
     ) -> str:
         parts = []
         if context:

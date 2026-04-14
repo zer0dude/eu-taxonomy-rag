@@ -9,6 +9,7 @@ AgentProtocol has moved to agents/base.py.
 from __future__ import annotations
 
 from taxonomy_rag.readers.base import AttachmentInfo  # noqa: F401 (re-exported for convenience)
+from taxonomy_rag.tracing.base import NullTracer
 
 
 def get_agent() -> "MockAgent":
@@ -34,5 +35,6 @@ class MockAgent:
         context: str = "",
         prompt: str = "",
         attachments: list[AttachmentInfo] = [],
+        tracer: NullTracer = NullTracer(),
     ) -> str:  # noqa: ARG002
         return self.ANSWER

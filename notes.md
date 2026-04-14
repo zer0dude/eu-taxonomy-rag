@@ -27,8 +27,8 @@ Build incrementally. Each step should be testable and produce a measurable resul
 - [x] Evaluation baseline
 - [x] Bare LLM baseline (llm_direct on simple_v1 + golden_dataset_v1)
 - [x] ReAct agent with attachment tools (react on hard_01)
-- [ ] Agent tracing / run logs  ← next
-- [ ] PDF spike
+- [x] Agent tracing / run logs
+- [ ] PDF spike  ← next
 - [ ] Naive ingestion
 - [ ] Naive RAG tool
 - [ ] Grounded reasoning
@@ -45,9 +45,9 @@ Build incrementally. Each step should be testable and produce a measurable resul
 - `--agent` — any registered agent name; auto-discovered from `src/taxonomy_rag/agents/`
 
 Each run saves to `runs/{YYYYMMDD}_{HHMMSS}_{agent}_{question_set}/`:
-- `metadata.json` — machine-readable run summary
+- `metadata.json` — machine-readable run summary (includes log_level used)
 - `outcomes.csv` — one row per question; human fills `human_score` and `human_notes`
-- `{question_id}.log` — (planned) structured trace of what the agent did per question
+- `traces/{question_id}_trace.json` — structured per-question agent trace (see below)
 
 **Question sets:**
 - `eval/simple_v1/questions.json` — 10 manufacturing eligibility questions, adversarial
@@ -58,6 +58,13 @@ Each run saves to `runs/{YYYYMMDD}_{HHMMSS}_{agent}_{question_set}/`:
 - `mock` — hardcoded fixed string; validates pipeline plumbing
 - `llm_direct` — bare Anthropic API call, no tools, no retrieval
 - `react` — Anthropic tool-use loop; reads attachments via `read_full_document` tool
+
+**Tracing (`--log-level`):**
+- `metadata` (default) — reasoning text + tool call names/inputs/sizes/timing; no content
+- `truncated` — as above, plus first N chars of each tool result (`--truncate-chars`, default 500)
+- `full` — complete tool result text stored in trace
+- `none` — no trace files written
+- Traces saved to `runs/{run_id}/traces/`; `NullTracer` used when log-level is none
 
 **Prompts:**
 - `prompts/base_v1.txt` — EU Taxonomy expert, eligibility vs alignment framing
@@ -95,12 +102,7 @@ sections as its source. That is the real target.
 
 ## Next steps
 
-1. **Agent tracing** — write a structured log per question to the run folder:
-   - What the agent was given (question, context, attachment list)
-   - Each iteration: LLM reasoning text + tool calls made + tool results
-   - Final answer
-   - Simple, local, no external service (no LangSmith)
-2. **PDF spike** — extract and inspect raw text from 2021_2139_EN.pdf in a notebook
+1. **PDF spike** — extract and inspect raw text from 2021_2139_EN.pdf in a notebook
 3. **Implement PDFParser + NaiveChunker** — ingest one EU Taxonomy document
 4. **Build corpus search tool** — wrap `DocumentRepository.vector_search()` as an agent
    tool; run eval and compare to `llm_direct` baseline

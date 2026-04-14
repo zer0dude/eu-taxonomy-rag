@@ -13,6 +13,7 @@ Environment variables read (via python-dotenv / .env):
 from __future__ import annotations
 
 import os
+import time
 
 import anthropic
 
@@ -20,6 +21,7 @@ from taxonomy_rag.readers.base import AttachmentInfo
 from taxonomy_rag.readers.registry import default_registry
 from taxonomy_rag.tools.attachment.read_full import ReadFullDocument
 from taxonomy_rag.tools.base import ToolKit
+from taxonomy_rag.tracing.base import NullTracer
 
 
 _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
@@ -64,6 +66,7 @@ class ReActAgent:
         context: str = "",
         prompt: str = "",
         attachments: list[AttachmentInfo] = [],
+        tracer: NullTracer = NullTracer(),
     ) -> str:
         # Build per-question toolkit with the resolved path map
         path_map = {a.name: a.path for a in attachments}
@@ -93,26 +96,34 @@ class ReActAgent:
                 messages=messages,
             )
 
-            print(
-                f"  [ReAct iter {iteration + 1}] stop_reason={response.stop_reason} "
-                f"blocks={[b.type for b in response.content]}"
+            # Extract reasoning text from text blocks in this response
+            reasoning = " ".join(
+                b.text for b in response.content if b.type == "text"
             )
+            tracer.log_reasoning(iteration + 1, reasoning)
 
             if response.stop_reason == "end_turn":
-                return next(
+                final = next(
                     (b.text for b in response.content if hasattr(b, "text")),
                     "",
                 )
+                return final
 
             if response.stop_reason == "tool_use":
                 messages.append({"role": "assistant", "content": response.content})
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
-                        print(f"    -> tool call: {block.name}({block.input})")
+                        t0 = time.monotonic()
                         result = toolkit.run(block.name, block.input)
-                        char_count = len(result)
-                        print(f"    <- result: {char_count} chars")
+                        duration_ms = (time.monotonic() - t0) * 1000
+                        tracer.log_tool_call(
+                            iteration + 1,
+                            block.name,
+                            block.input,
+                            result,
+                            duration_ms,
+                        )
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,

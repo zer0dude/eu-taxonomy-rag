@@ -30,6 +30,10 @@ RUNS_DIR = REPO_ROOT / "runs"
 # Preferred attachment formats in priority order (first found wins)
 _ATTACHMENT_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".csv"]
 
+_LOG_LEVEL_CHOICES = ["full", "truncated", "metadata", "none"]
+_LOG_LEVEL_DEFAULT = "metadata"
+_TRUNCATE_CHARS_DEFAULT = 500
+
 
 # ---------------------------------------------------------------------------
 # Agent factory
@@ -181,6 +185,23 @@ def main() -> None:
         required=True,
         help="Agent to use. Must match a module in src/taxonomy_rag/agents/ that exposes get_agent().",
     )
+    parser.add_argument(
+        "--log-level",
+        default=_LOG_LEVEL_DEFAULT,
+        choices=_LOG_LEVEL_CHOICES,
+        dest="log_level",
+        help=(
+            "Trace verbosity. full=complete tool results, truncated=first N chars, "
+            "metadata=sizes only, none=no trace files. Default: %(default)s"
+        ),
+    )
+    parser.add_argument(
+        "--truncate-chars",
+        type=int,
+        default=_TRUNCATE_CHARS_DEFAULT,
+        dest="truncate_chars",
+        help="Characters to keep per tool result when --log-level=truncated. Default: %(default)s",
+    )
     args = parser.parse_args()
 
     questions_path = Path(args.questions)
@@ -213,6 +234,12 @@ def main() -> None:
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # Tracing imports — lazy to keep startup fast when log_level=none
+    if args.log_level != "none":
+        from taxonomy_rag.tracing.base import LogLevel
+        from taxonomy_rag.tracing.file_tracer import FileTracer
+    from taxonomy_rag.tracing.base import NullTracer
+
     # Run the agent over each question
     t_start = time.monotonic()
     rows: list[dict] = []
@@ -226,12 +253,25 @@ def main() -> None:
             for a in attachments:
                 print(f"  attachment: {a.name} ({a.file_type}, {a.size_bytes // 1024} KB)")
 
+        if args.log_level != "none":
+            tracer = FileTracer(item["id"], LogLevel(args.log_level), args.truncate_chars)
+        else:
+            tracer = NullTracer()
+
+        tracer.record_input(question, context, attachments)
+
+        q_start = time.monotonic()
         answer = agent.answer(
             question=question,
             context=context,
             prompt=prompt,
             attachments=attachments,
+            tracer=tracer,
         )
+        q_duration = time.monotonic() - q_start
+
+        tracer.record_output(answer, q_duration)
+        tracer.save(run_dir / "traces" / f"{item['id']}_trace.json")
 
         notes = _get_evaluator_notes(item)
         rows.append({
@@ -258,6 +298,8 @@ def main() -> None:
         "agent": args.agent,
         "questions_file": str(questions_path.relative_to(REPO_ROOT)),
         "prompt_file": str(prompt_path.relative_to(REPO_ROOT)),
+        "log_level": args.log_level,
+        "truncate_chars": args.truncate_chars if args.log_level == "truncated" else None,
         "total_questions": len(rows),
         "duration_seconds": round(duration, 3),
     }

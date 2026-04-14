@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from taxonomy_rag.readers.base import AttachmentInfo
+from taxonomy_rag.tracing.base import NullTracer
 
 
 @runtime_checkable
@@ -25,6 +26,7 @@ class AgentProtocol(Protocol):
         context: str = "",
         prompt: str = "",
         attachments: list[AttachmentInfo] = [],
+        tracer: NullTracer = NullTracer(),
     ) -> str:
         """Return an answer string for the given question.
 
@@ -35,5 +37,7 @@ class AgentProtocol(Protocol):
             attachments: Metadata list of available attached files. Agents
                          that use tools can read these via tool calls; agents
                          that don't (mock, llm_direct) may ignore this field.
+            tracer:      Tracing sink. Pass a FileTracer to persist the agent's
+                         reasoning loop; NullTracer (default) discards all calls.
         """
         ...
