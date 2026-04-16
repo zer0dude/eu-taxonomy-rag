@@ -22,7 +22,9 @@ class DocumentRepository:
         metadata: dict[str, Any] | None = None,
     ) -> int:
         """Insert a document and return its generated id."""
+        from psycopg.rows import tuple_row
         with get_pool().connection() as conn:
+            conn.row_factory = tuple_row  # guard against pool-reused dict_row
             row = conn.execute(
                 """
                 INSERT INTO documents (content, embedding, metadata)
