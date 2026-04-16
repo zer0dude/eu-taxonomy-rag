@@ -3,30 +3,21 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
+import litellm
 
 from taxonomy_rag.db.repository import DocumentRepository
 from taxonomy_rag.embeddings.embedder import Embedder
-from taxonomy_rag.llm.provider import get_llm
+from taxonomy_rag.llm.provider import get_completion_kwargs
 
-_HYDE_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        "Write a short, factual paragraph that would directly answer the question below. "
-        "Do not hedge or say you don't know — just write what a good answer would look like.",
-    ),
-    ("human", "{question}"),
-])
+_HYDE_SYSTEM = (
+    "Write a short, factual paragraph that would directly answer the question below. "
+    "Do not hedge or say you don't know — just write what a good answer would look like."
+)
 
-_RAG_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        "You are a helpful assistant. Answer using ONLY the context provided below. "
-        "If the context does not contain enough information to answer, say so clearly.\n\n"
-        "Context:\n{context}",
-    ),
-    ("human", "{question}"),
-])
+_RAG_SYSTEM = (
+    "You are a helpful assistant. Answer using ONLY the context provided below. "
+    "If the context does not contain enough information to answer, say so clearly."
+)
 
 
 @lru_cache(maxsize=1)
@@ -42,7 +33,7 @@ class AdvancedRAG:
     HyDE (Hypothetical Document Embeddings)
     ----------------------------------------
     Instead of embedding the question directly, we ask the LLM to generate a
-    hypothetical answer document, then embed *that*. Rationale: a generated
+    hypothetical answer document, then embed *that*.  Rationale: a generated
     answer sits closer in embedding space to real answers than a short question
     does, improving recall for semantic search.
 
@@ -50,7 +41,7 @@ class AdvancedRAG:
     -----------------------
     After first-pass retrieval (e.g. top-20 by cosine similarity), a
     cross-encoder scores every (question, document) pair and picks the true
-    top-k. Cross-encoders are O(n) but far more accurate than bi-encoders
+    top-k.  Cross-encoders are O(n) but far more accurate than bi-encoders
     because they see both query and document together.
 
     Both can be enabled/disabled independently.
@@ -74,9 +65,15 @@ class AdvancedRAG:
         embedding = self.embedder.embed(content)
         return self.repo.insert(content, embedding, metadata)
 
-    def _generate_hypothetical_doc(self, question: str, llm_provider: str | None) -> str:
-        chain = _HYDE_PROMPT | get_llm(llm_provider)
-        return chain.invoke({"question": question}).content
+    def _generate_hypothetical_doc(self, question: str, provider: str | None) -> str:
+        messages = [
+            {"role": "system", "content": _HYDE_SYSTEM},
+            {"role": "user", "content": question},
+        ]
+        kwargs = get_completion_kwargs(provider)
+        response = litellm.completion(**kwargs, messages=messages)
+        # Fall back to the raw question if the model returns nothing
+        return response.choices[0].message.content or question
 
     def _rerank(self, question: str, docs: list[dict], top_k: int) -> list[dict]:
         pairs = [(question, d["content"]) for d in docs]
@@ -91,10 +88,11 @@ class AdvancedRAG:
         llm_provider: str | None = None,
     ) -> dict[str, Any]:
         # Step 1: determine what to embed
-        if self.use_hyde:
-            query_text = self._generate_hypothetical_doc(question, llm_provider)
-        else:
-            query_text = question
+        query_text = (
+            self._generate_hypothetical_doc(question, llm_provider)
+            if self.use_hyde
+            else question
+        )
 
         # Step 2: first-pass retrieval (fetch more candidates for reranking)
         candidate_k = self.rerank_candidates if self.use_reranking else top_k
@@ -109,10 +107,19 @@ class AdvancedRAG:
 
         # Step 4: generate answer
         context = "\n\n".join(d["content"] for d in docs)
-        chain = _RAG_PROMPT | get_llm(llm_provider)
-        response = chain.invoke({"context": context, "question": question})
+        messages = [
+            {
+                "role": "system",
+                "content": f"{_RAG_SYSTEM}\n\nContext:\n{context}",
+            },
+            {"role": "user", "content": question},
+        ]
+        kwargs = get_completion_kwargs(llm_provider)
+        response = litellm.completion(**kwargs, messages=messages)
+        answer = response.choices[0].message.content or ""
+
         return {
-            "answer": response.content,
+            "answer": answer,
             "sources": [
                 {"id": d["id"], "content": d["content"], "score": float(d["score"])}
                 for d in docs

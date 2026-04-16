@@ -2,21 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
+import litellm
 
 from taxonomy_rag.db.repository import DocumentRepository
 from taxonomy_rag.embeddings.embedder import Embedder
-from taxonomy_rag.llm.provider import get_llm
+from taxonomy_rag.llm.provider import get_completion_kwargs
 
-_RAG_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        "You are a helpful assistant. Answer using ONLY the context provided below. "
-        "If the context does not contain enough information to answer, say so clearly.\n\n"
-        "Context:\n{context}",
-    ),
-    ("human", "{question}"),
-])
+_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Answer using ONLY the context provided below. "
+    "If the context does not contain enough information to answer, say so clearly."
+)
 
 
 class HybridRAG:
@@ -55,10 +50,21 @@ class HybridRAG:
         embedding = self.embedder.embed(question)
         docs = self.repo.hybrid_search(question, embedding, top_k, self.rrf_k)
         context = "\n\n".join(d["content"] for d in docs)
-        chain = _RAG_PROMPT | get_llm(llm_provider)
-        response = chain.invoke({"context": context, "question": question})
+
+        messages = [
+            {
+                "role": "system",
+                "content": f"{_SYSTEM_PROMPT}\n\nContext:\n{context}",
+            },
+            {"role": "user", "content": question},
+        ]
+
+        kwargs = get_completion_kwargs(llm_provider)
+        response = litellm.completion(**kwargs, messages=messages)
+        answer = response.choices[0].message.content or ""
+
         return {
-            "answer": response.content,
+            "answer": answer,
             "sources": [
                 {"id": d["id"], "content": d["content"], "score": float(d["score"])}
                 for d in docs

@@ -43,5 +43,25 @@ class Settings(BaseSettings):
     default_chunk_overlap: int = 50     # tokens
     default_chunker: str = "naive"      # "naive" | "structural" | "hierarchical"
 
+    @computed_field
+    @property
+    def litellm_model_string(self) -> str:
+        """Return the LiteLLM model string for the configured provider.
+
+        Ollama:    "ollama/llama3.2"
+        Anthropic: "claude-haiku-4-5-20251001"  (bare name; routed via ANTHROPIC_API_KEY)
+        OpenAI:    "gpt-4o-mini"
+        """
+        if self.llm_provider == "ollama":
+            return f"ollama/{self.ollama_model}"
+        if self.llm_provider == "anthropic":
+            return self.anthropic_model
+        if self.llm_provider == "openai":
+            return self.openai_model
+        raise ValueError(
+            f"Unknown llm_provider: {self.llm_provider!r}. "
+            "Choose: 'ollama', 'anthropic', or 'openai'."
+        )
+
 
 settings = Settings()

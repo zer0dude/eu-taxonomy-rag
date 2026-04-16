@@ -1,25 +1,20 @@
-"""Bare LLM agent — direct Anthropic API call, no retrieval.
+"""Bare LLM agent — direct litellm.completion() call, no retrieval.
 
 This is the bare-LLM baseline: the system prompt is the only guidance,
-and the question (plus any inline context) is the only input. No documents
-are retrieved. Results represent what the model knows from training alone.
+and the question (plus any inline context) is the only input.  No documents
+are retrieved.  Results represent what the model knows from training alone.
 
-Environment variables read (via python-dotenv / .env):
-    ANTHROPIC_API_KEY   — required
-    ANTHROPIC_MODEL     — defaults to claude-haiku-4-5-20251001
+Provider is selected via the LLM_PROVIDER env var (see config.py).
 """
 
 from __future__ import annotations
 
-import os
+import litellm
 
-import anthropic
-
+from taxonomy_rag.llm.provider import get_completion_kwargs
 from taxonomy_rag.readers.base import AttachmentInfo
 from taxonomy_rag.tracing.base import NullTracer
 
-
-_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 _MAX_TOKENS = 1024
 
 
@@ -28,7 +23,7 @@ def get_agent() -> "LLMDirectAgent":
 
 
 class LLMDirectAgent:
-    """Calls the Anthropic Messages API with no retrieval or tool use.
+    """Calls litellm.completion() with no retrieval or tool use.
 
     The system prompt comes from the prompt file passed to the eval script.
     The user message is the question, prepended by context if present.
@@ -36,13 +31,7 @@ class LLMDirectAgent:
     """
 
     def __init__(self) -> None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise EnvironmentError(
-                "ANTHROPIC_API_KEY is not set. Add it to your .env file."
-            )
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+        self._completion_kwargs = get_completion_kwargs()
 
     def answer(
         self,
@@ -52,16 +41,20 @@ class LLMDirectAgent:
         attachments: list[AttachmentInfo] = [],
         tracer: NullTracer = NullTracer(),
     ) -> str:
-        parts = []
+        parts: list[str] = []
         if context:
             parts.append(f"Context:\n{context}")
         parts.append(f"Question:\n{question}")
         user_content = "\n\n".join(parts)
 
-        message = self.client.messages.create(
-            model=self.model,
+        messages = [
+            {"role": "system", "content": prompt or "You are a helpful assistant."},
+            {"role": "user", "content": user_content},
+        ]
+
+        response = litellm.completion(
+            **self._completion_kwargs,
+            messages=messages,
             max_tokens=_MAX_TOKENS,
-            system=prompt or "You are a helpful assistant.",
-            messages=[{"role": "user", "content": user_content}],
         )
-        return message.content[0].text
+        return response.choices[0].message.content or ""
