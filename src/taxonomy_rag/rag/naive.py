@@ -19,18 +19,25 @@ class NaiveRAG:
 
     This is the simplest possible RAG implementation:
     1. Embed the question with sentence-transformers
-    2. Retrieve top-k documents by cosine similarity
+    2. Retrieve top-k documents by cosine similarity (scoped to strategy if set)
     3. Concatenate their content as context
     4. Pass context + question to the LLM via litellm.completion()
+
+    Args:
+        ingestion_strategy: If set, retrieval is restricted to chunks ingested
+            with this strategy name (e.g. ``"naive_pdf"``).  Pass None to
+            search all chunks regardless of strategy.
     """
 
     def __init__(
         self,
         repo: DocumentRepository | None = None,
         embedder: Embedder | None = None,
+        ingestion_strategy: str | None = None,
     ) -> None:
         self.repo = repo or DocumentRepository()
         self.embedder = embedder or Embedder()
+        self.ingestion_strategy = ingestion_strategy
 
     def ingest(self, content: str, metadata: dict[str, Any] | None = None) -> int:
         """Embed content and store it. Returns the new document id."""
@@ -52,7 +59,11 @@ class NaiveRAG:
             }
         """
         embedding = self.embedder.embed(question)
-        docs = self.repo.vector_search(embedding, top_k)
+        filter_ = (
+            {"ingestion_strategy": self.ingestion_strategy}
+            if self.ingestion_strategy else None
+        )
+        docs = self.repo.vector_search(embedding, top_k, metadata_filter=filter_)
         context = "\n\n".join(d["content"] for d in docs)
 
         messages = [

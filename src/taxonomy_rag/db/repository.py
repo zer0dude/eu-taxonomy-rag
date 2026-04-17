@@ -94,15 +94,34 @@ class DocumentRepository:
     # ------------------------------------------------------------------
 
     def vector_search(
-        self, embedding: list[float], top_k: int = 5
+        self,
+        embedding: list[float],
+        top_k: int = 5,
+        metadata_filter: dict | None = None,
     ) -> list[dict]:
         """Cosine similarity search.
 
         pgvector's <=> operator is cosine *distance* (0 = identical, 2 = opposite).
         We convert to similarity: score = 1 - distance, so 1.0 is a perfect match.
+
+        Args:
+            metadata_filter: Optional JSONB containment filter, e.g.
+                {"ingestion_strategy": "naive_pdf"}.  Uses the GIN index.
         """
         with get_pool().connection() as conn:
             conn.row_factory = dict_row
+            if metadata_filter:
+                return conn.execute(
+                    """
+                    SELECT id, content, metadata,
+                           1 - (embedding <=> %s::vector) AS score
+                    FROM documents
+                    WHERE metadata @> %s::jsonb
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (embedding, Jsonb(metadata_filter), embedding, top_k),
+                ).fetchall()
             return conn.execute(
                 """
                 SELECT id, content, metadata,
@@ -124,6 +143,7 @@ class DocumentRepository:
         embedding: list[float],
         top_k: int = 5,
         rrf_k: int = 60,
+        metadata_filter: dict | None = None,
     ) -> list[dict]:
         """Reciprocal Rank Fusion of BM25 full-text and cosine vector search.
 
@@ -132,17 +152,25 @@ class DocumentRepository:
 
         Pre-fetches top_k * 4 candidates from each ranker before fusion so that
         documents appearing in only one list still get a fair chance.
+
+        Args:
+            metadata_filter: Optional JSONB containment filter applied to both
+                the vector and FTS legs before ranking, e.g.
+                {"ingestion_strategy": "naive_pdf"}.  Uses the GIN index.
         """
         pre_k = top_k * 4
+        # Build optional WHERE clause for metadata filtering
+        filter_clause = "AND metadata @> %(filter)s::jsonb" if metadata_filter else ""
         with get_pool().connection() as conn:
             conn.row_factory = dict_row
             return conn.execute(
-                """
+                f"""
                 WITH
                 vector_ranked AS (
                     SELECT id, content, metadata,
                            ROW_NUMBER() OVER (ORDER BY embedding <=> %(emb)s::vector) AS rank
                     FROM documents
+                    WHERE TRUE {filter_clause}
                     ORDER BY embedding <=> %(emb)s::vector
                     LIMIT %(pre_k)s
                 ),
@@ -154,6 +182,7 @@ class DocumentRepository:
                            ) AS rank
                     FROM documents
                     WHERE tsvector_content @@ plainto_tsquery('english', %(query)s)
+                    {filter_clause}
                     ORDER BY ts_rank_cd(tsvector_content,
                              plainto_tsquery('english', %(query)s)) DESC
                     LIMIT %(pre_k)s
@@ -173,6 +202,12 @@ class DocumentRepository:
                 ORDER BY rrf_score DESC
                 LIMIT %(top_k)s
                 """,
-                {"emb": embedding, "query": query_text, "pre_k": pre_k,
-                 "k": rrf_k, "top_k": top_k},
+                {
+                    "emb": embedding,
+                    "query": query_text,
+                    "pre_k": pre_k,
+                    "k": rrf_k,
+                    "top_k": top_k,
+                    "filter": Jsonb(metadata_filter) if metadata_filter else None,
+                },
             ).fetchall()

@@ -28,9 +28,9 @@ Build incrementally. Each step should be testable and produce a measurable resul
 - [x] Bare LLM baseline (llm_direct on simple_v1 + golden_dataset_v1)
 - [x] ReAct agent with attachment tools (react on hard_01)
 - [x] Agent tracing / run logs
-- [ ] PDF spike  ← next
-- [ ] Naive ingestion
-- [ ] Naive RAG tool
+- [x] PDF spike
+- [x] Naive ingestion
+- [ ] Naive RAG tool  ← next
 - [ ] Grounded reasoning
 - [ ] Retrieval iteration
 - [ ] Harder eval sets
@@ -143,6 +143,116 @@ top of its own connection block.
 
 ---
 
+## Naive ingestion (2026-04-17)
+
+Implemented `PDFParser` (pymupdf `page.get_text()`) and `NaiveChunker` (sliding
+word-window, default 512 words / 50 overlap). Both live in
+`src/taxonomy_rag/ingestion/parsers/pdf.py` and
+`src/taxonomy_rag/ingestion/chunkers/naive.py`.
+
+`document_id` is derived from the filename (`CELEX_32021R2139_EN_TXT.pdf` →
+`32021r2139`); `document_type` is inferred from the parent directory name
+(`delegated_acts_technical_criteria` → `delegated_act`, etc.).
+
+Full corpus ingested via `scripts/ingest_corpus.py` (14 PDFs). Single-file
+ingestion still available via the existing `scripts/ingest.py`.
+
+39 unit tests added in `tests/unit/test_ingestion.py` — all passing.
+
+**Infrastructure:** pgAdmin added to `docker-compose.yml`. After `docker compose
+up -d pgadmin`, the UI is available at http://localhost:5050
+(`admin@local.dev` / `admin`). Connect to host `postgres`, port `5432`,
+db/user/password all `taxonomy`. Useful for browsing chunks and running ad-hoc
+SQL against the documents table.
+
+---
+
+## Ingestion strategy architecture (2026-04-17)
+
+Added a `strategies/` layer so that new ingestion recipes can be added without
+touching any existing code.
+
+**Layers:**
+- `src/taxonomy_rag/ingestion/parsers/` — parse primitives (PDFParser, etc.)
+- `src/taxonomy_rag/ingestion/chunkers/` — chunk primitives (NaiveChunker, etc.)
+- `src/taxonomy_rag/ingestion/strategies/` — named compositions (NaivePDFStrategy, ...)
+- `src/taxonomy_rag/ingestion/strategies/registry.py` — `DEFAULT_REGISTRY` (one line to add a strategy)
+- `scripts/ingest.py` / `scripts/ingest_corpus.py` — CLI, never changes when new strategies are added
+
+**Adding a new strategy:** create a new file in `strategies/`, then add one line to
+`DEFAULT_REGISTRY` in `registry.py`. No script or pipeline changes needed.
+
+**Every chunk now stores:**
+```
+ingestion_strategy  — e.g. "naive_pdf"
+ingest_run_id       — UUID per corpus run (printed by ingest_corpus.py)
+chunk_strategy      — chunker name e.g. "naive"
+document_id, document_type, source, chunk_index, page_range
+```
+
+**Filtered search:** `DocumentRepository.vector_search()` and `hybrid_search()` now
+accept an optional `metadata_filter` dict (JSONB `@>` operator, uses GIN index).
+`NaiveRAG(ingestion_strategy="naive_pdf")` scopes all retrieval to that strategy.
+
+28 new unit tests in `tests/unit/test_strategies.py` — 67 unit tests total.
+
+**Action needed before next ingest:** the corpus was first ingested without
+`ingestion_strategy` / `ingest_run_id`. Run `TRUNCATE documents;` in pgAdmin or psql,
+then re-ingest with `scripts/ingest_corpus.py --strategy naive_pdf`.
+
+**Note on scripts/:** `scripts/` contains CLI entry points (`ingest.py`,
+`ingest_corpus.py`, `evaluate.py`) — thin orchestration wrappers over library code
+in `src/`. One-off exploratory scripts (e.g. `spike_pdf.py`) do not belong here and
+should be deleted once their purpose is served.
+
+---
+
+## DB management
+
+**Inspect what is in the DB** (pgAdmin Query Tool or psql):
+```sql
+SELECT metadata->>'ingestion_strategy' AS strategy,
+       metadata->>'ingest_run_id'      AS run_id,
+       COUNT(*)                         AS chunks,
+       MIN(created_at)                  AS started,
+       MAX(created_at)                  AS finished
+FROM documents
+GROUP BY 1, 2
+ORDER BY started;
+```
+
+**Delete a specific run** (re-ingest after a bug fix):
+```sql
+DELETE FROM documents WHERE metadata->>'ingest_run_id' = '<uuid>';
+```
+
+**Delete all chunks for one strategy:**
+```sql
+DELETE FROM documents WHERE metadata->>'ingestion_strategy' = 'naive_pdf';
+```
+
+**Delete legacy untagged chunks** (ingested before strategy tracking):
+```sql
+DELETE FROM documents WHERE metadata->>'ingestion_strategy' IS NULL;
+```
+
+**Wipe everything and start fresh:**
+```sql
+TRUNCATE documents;
+```
+
+**Inspect a specific document's chunks in order:**
+```sql
+SELECT id, metadata->>'page_range', LEFT(content, 120)
+FROM documents
+WHERE metadata->>'document_id' = '32021r2139'
+  AND metadata->>'ingestion_strategy' = 'naive_pdf'
+ORDER BY (metadata->>'chunk_index')::int
+LIMIT 20;
+```
+
+---
+
 ## Open questions
 
 - How do we force the agent to ground claims in retrieved documents rather than training
@@ -158,11 +268,10 @@ top of its own connection block.
 
 ## Next steps
 
-1. **PDF spike** — extract and inspect raw text from 2021_2139_EN.pdf
-3. **Implement PDFParser + NaiveChunker** — ingest one EU Taxonomy document
-4. **Build corpus search tool** — wrap `DocumentRepository.vector_search()` as an agent
+1. **Re-ingest corpus** — `TRUNCATE documents;` then `scripts/ingest_corpus.py --strategy naive_pdf`
+2. **Build corpus search tool** — wrap `DocumentRepository.vector_search()` as an agent
    tool; run eval and compare to `llm_direct` baseline
-5. **Grounded reasoning prompt/constraint** — experiment with forcing the agent to only
+3. **Grounded reasoning prompt/constraint** — experiment with forcing the agent to only
    make claims it can back with a retrieved document section
-6. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets,
+4. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets,
    incomplete or contradictory data)

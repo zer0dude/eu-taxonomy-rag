@@ -1,86 +1,80 @@
-"""CLI entry point for document ingestion.
+"""CLI entry point for ingesting a single document.
 
 Usage:
-    uv run python scripts/ingest.py <file_path>
+    uv run python scripts/ingest.py <file_path> [--strategy naive_pdf]
+    uv run python scripts/ingest.py --list-strategies
 
-The parser and chunker are selected based on settings.default_chunker and
-the file extension. Implement the parsers and chunkers in
-src/taxonomy_rag/ingestion/ before running this script.
+The strategy name is stored in every chunk's metadata as ``ingestion_strategy``
+together with a unique ``ingest_run_id``, so results can be filtered and
+compared across experiments.
 """
 
 import argparse
 import sys
+from uuid import uuid4
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from taxonomy_rag.config import settings  # noqa: E402
-from taxonomy_rag.db.connection import get_pool  # noqa: E402
-from taxonomy_rag.db.repository import DocumentRepository  # noqa: E402
-from taxonomy_rag.embeddings.embedder import Embedder  # noqa: E402
-from taxonomy_rag.ingestion.pipeline import IngestionPipeline  # noqa: E402
-
-
-def _get_parser(file_path: str):
-    """Return the appropriate parser for the given file."""
-    if file_path.lower().endswith(".pdf"):
-        from taxonomy_rag.ingestion.parsers.pdf import PDFParser
-        return PDFParser()
-    if file_path.lower().endswith(".xlsx"):
-        from taxonomy_rag.ingestion.parsers.spreadsheet import SpreadsheetParser
-        return SpreadsheetParser()
-    raise ValueError(f"No parser available for: {file_path}")
-
-
-def _get_chunker(strategy: str):
-    """Return the chunker for the given strategy name."""
-    if strategy == "naive":
-        from taxonomy_rag.ingestion.chunkers.naive import NaiveChunker
-        return NaiveChunker(
-            chunk_size=settings.default_chunk_size,
-            chunk_overlap=settings.default_chunk_overlap,
-        )
-    if strategy == "structural":
-        from taxonomy_rag.ingestion.chunkers.structural import StructuralChunker
-        return StructuralChunker()
-    if strategy == "hierarchical":
-        from taxonomy_rag.ingestion.chunkers.hierarchical import HierarchicalChunker
-        return HierarchicalChunker()
-    raise ValueError(f"Unknown chunker strategy: {strategy!r}")
+from taxonomy_rag.ingestion.strategies.registry import DEFAULT_REGISTRY  # noqa: E402
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest a document into the taxonomy RAG database.")
-    parser.add_argument("file", help="Path to the PDF or XLSX file to ingest")
+    parser = argparse.ArgumentParser(
+        description="Ingest a single document into the taxonomy RAG database."
+    )
     parser.add_argument(
-        "--chunker",
-        default=settings.default_chunker,
-        choices=["naive", "structural", "hierarchical"],
-        help="Chunking strategy to use (default: %(default)s)",
+        "file",
+        nargs="?",
+        help="Path to the file to ingest (PDF, XLSX, …)",
+    )
+    parser.add_argument(
+        "--strategy",
+        default=DEFAULT_REGISTRY.names()[0],
+        choices=DEFAULT_REGISTRY.names(),
+        help="Ingestion strategy to use (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--list-strategies",
+        action="store_true",
+        help="Print all available strategy names and exit",
     )
     args = parser.parse_args()
 
-    doc_parser = _get_parser(args.file)
-    chunker = _get_chunker(args.chunker)
-    embedder = Embedder()
-    repo = DocumentRepository()
+    if args.list_strategies:
+        for name in DEFAULT_REGISTRY.names():
+            strategy = DEFAULT_REGISTRY.get(name)
+            print(f"  {name}  —  {strategy.description}")
+        return
 
-    pipeline = IngestionPipeline(
-        parser=doc_parser,
-        chunker=chunker,
-        embedder=embedder,
-        repo=repo,
-    )
+    if not args.file:
+        parser.error("file argument is required unless --list-strategies is used")
 
-    print(f"Ingesting: {args.file}")
-    print(f"Chunker:   {args.chunker}")
+    strategy = DEFAULT_REGISTRY.get(args.strategy)
+
+    if not strategy.supports(args.file):
+        print(
+            f"ERROR: strategy {args.strategy!r} does not support this file type: {args.file}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    ingest_run_id = str(uuid4())
+    pipeline = strategy.build_pipeline()
+
+    print(f"Ingesting:  {args.file}")
+    print(f"Strategy:   {args.strategy}")
+    print(f"Run ID:     {ingest_run_id}")
 
     try:
-        result = pipeline.run(args.file)
+        result = pipeline.run(args.file, ingest_run_id=ingest_run_id)
     except NotImplementedError as e:
         print(f"\nNot implemented yet: {e}", file=sys.stderr)
-        print("Implement the parser/chunker in src/taxonomy_rag/ingestion/ first.", file=sys.stderr)
+        print(
+            "Implement the parser/chunker in src/taxonomy_rag/ingestion/ first.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print(f"\nDocument ID:    {result.document_id}")
