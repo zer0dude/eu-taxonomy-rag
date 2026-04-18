@@ -177,8 +177,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--prompt",
-        required=True,
-        help="Path to prompt text file (relative to repo root or absolute)",
+        required=False,
+        default=None,
+        help=(
+            "Path to prompt text file (relative to repo root or absolute). "
+            "If omitted, the agent uses its built-in default prompt."
+        ),
     )
     parser.add_argument(
         "--agent",
@@ -208,22 +212,24 @@ def main() -> None:
     if not questions_path.is_absolute():
         questions_path = REPO_ROOT / questions_path
 
-    prompt_path = Path(args.prompt)
-    if not prompt_path.is_absolute():
-        prompt_path = REPO_ROOT / prompt_path
+    prompt_path: Path | None = None
+    prompt: str = ""
+    if args.prompt is not None:
+        prompt_path = Path(args.prompt)
+        if not prompt_path.is_absolute():
+            prompt_path = REPO_ROOT / prompt_path
+        if not prompt_path.exists():
+            print(f"Error: prompt file not found: {prompt_path}", file=sys.stderr)
+            sys.exit(1)
+        with open(prompt_path, encoding="utf-8") as f:
+            prompt = f.read()
 
     if not questions_path.exists():
         print(f"Error: questions file not found: {questions_path}", file=sys.stderr)
         sys.exit(1)
-    if not prompt_path.exists():
-        print(f"Error: prompt file not found: {prompt_path}", file=sys.stderr)
-        sys.exit(1)
 
     with open(questions_path, encoding="utf-8") as f:
         questions = json.load(f)
-
-    with open(prompt_path, encoding="utf-8") as f:
-        prompt = f.read()
 
     agent = _get_agent(args.agent)
     question_set = _question_set_name(questions_path)
@@ -297,7 +303,7 @@ def main() -> None:
         "timestamp": now.isoformat(),
         "agent": args.agent,
         "questions_file": str(questions_path.relative_to(REPO_ROOT)),
-        "prompt_file": str(prompt_path.relative_to(REPO_ROOT)),
+        "prompt_file": str(prompt_path.relative_to(REPO_ROOT)) if prompt_path else None,
         "log_level": args.log_level,
         "truncate_chars": args.truncate_chars if args.log_level == "truncated" else None,
         "total_questions": len(rows),
@@ -332,7 +338,7 @@ def main() -> None:
     print(f"\nRun:       {run_id}")
     print(f"Agent:     {args.agent}")
     print(f"Questions: {questions_path.relative_to(REPO_ROOT)}  ({len(rows)} items)")
-    print(f"Prompt:    {prompt_path.relative_to(REPO_ROOT)}")
+    print(f"Prompt:    {prompt_path.relative_to(REPO_ROOT) if prompt_path else '(agent default)'}")
     print(f"Duration:  {duration:.3f}s")
     print(f"Output:    {run_dir.relative_to(REPO_ROOT)}/")
     print(f"           +-- metadata.json")

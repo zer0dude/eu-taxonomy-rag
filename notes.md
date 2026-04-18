@@ -30,7 +30,8 @@ Build incrementally. Each step should be testable and produce a measurable resul
 - [x] Agent tracing / run logs
 - [x] PDF spike
 - [x] Naive ingestion
-- [ ] Naive RAG tool  ← next
+- [x] Naive RAG tool
+- [x] Naive RAG tool  ← done
 - [ ] Grounded reasoning
 - [ ] Retrieval iteration
 - [ ] Harder eval sets
@@ -250,6 +251,95 @@ WHERE metadata->>'document_id' = '32021r2139'
 ORDER BY (metadata->>'chunk_index')::int
 LIMIT 20;
 ```
+
+---
+
+## Naive RAG tool eval (2026-04-18)
+
+First eval run with `react_naive_rag` (NaiveVectorRetrieval + NAIVE_PDF_CORPUS scope +
+`compliance_v1.txt` prompt) against `simple_v1` and `hard_01`.
+
+**simple_v1 (10 questions):** 9/10 answered fully. 1 question (MAN-EASY-3.1-004) hit the
+10-iteration cap and returned the sentinel instead of an answer.
+
+**hard_01 (3 questions):** 1/3 answered (ENE-HARD-002, correct). ENE-HARD-001 and
+ENE-HARD-003 hit the 10-iteration cap.
+
+**Root cause of max-iterations failures:** The strict compliance prompt ("do not answer without
+retrieved evidence") interacts badly with a low iteration cap. When the agent cannot find a
+fully conclusive retrieved chunk, it keeps searching rather than synthesising a partial answer
+— then exhausts the cap and returns nothing. This is worse than a partial answer.
+
+**Fix options (not yet implemented):**
+- Raise `max_iterations` in `AgentLoop` (currently 10) — gives the agent more room to converge
+- Add an explicit instruction to `compliance_v1.txt`: "After at most 5 searches, synthesise the
+  best answer you can from what you have retrieved, stating clearly what is missing"
+- Both together
+
+**Tool use pattern confirmed working:**
+- Corpus search (`search_corpus`) fired correctly on all questions
+- Hard_01 correctly used both `read_full_document` (attachments first) then `search_corpus`
+- Traces confirm structured reasoning + tool call logging working as expected
+
+---
+
+## Agent architecture (2026-04-18)
+
+As the project grows beyond one or two agents, each agent is now defined by three explicit
+components: a core agentic loop, a set of tools, and a default system prompt.
+
+```
+┌─────────────────── Agent ─────────────────────────────────────────┐
+│  Core loop (ReAct / AgentLoop)                                    │
+│  Default prompt (prompts/compliance_v1.txt)                       │
+│  ToolKit:                                                         │
+│    ┌─── DB retrieval tool ──────────────────────────────────────┐ │
+│    │  SearchCorpusTool                                          │ │
+│    │    retrieval: NaiveVectorRetrieval  ← HOW to search        │ │
+│    │    scope:     CorpusScope           ← WHAT to search       │ │
+│    └────────────────────────────────────────────────────────────┘ │
+│    ┌─── Attachment tool ────────────────────────────────────────┐ │
+│    │  ReadFullDocument (per-question path map)                  │ │
+│    └────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**Naming convention:** `{loop}_{primary_db_tool}` — e.g. `react_naive_rag`.
+Full composition (tools, scope, prompt file used) is recorded in `metadata.json` per eval run.
+The attachment tool is universal and not reflected in the agent name.
+
+**Tool taxonomy:**
+- *DB retrieval tools* — search the pgvector document store (SearchCorpusTool)
+- *Attachment tools* — read files supplied per-question (ReadFullDocument)
+- *Future* — web search, structured data lookup, etc.
+
+**Retrieval layer** (`src/taxonomy_rag/retrieval/`):
+- `RetrievalResult` — dataclass: doc_id, content, score, metadata
+- `CorpusScope` — defines which chunks are accessible (ingestion_strategy, document_type)
+  - `to_metadata_filter()` builds the JSONB `@>` filter passed to `vector_search()`
+  - Pre-defined: `NAIVE_PDF_CORPUS = CorpusScope(ingestion_strategy="naive_pdf")`
+- `NaiveVectorRetrieval` — embed → cosine vector search → list[RetrievalResult]
+  - No LLM call; pure retrieval primitive
+  - Composed with a CorpusScope inside SearchCorpusTool
+
+**Search tool** (`src/taxonomy_rag/tools/search/corpus.py`):
+- `SearchCorpusTool(retrieval, scope)` implements the Tool protocol
+- `run(query)` → formatted numbered blocks: document ID, page range, score, chunk text
+- The agent sees raw chunks and must synthesise and cite them in its answer
+
+**Prompt ownership:**
+- Default prompt is baked into each agent class (loaded from `prompts/` at import time)
+- `--prompt` on evaluate.py overrides the default for experimental runs
+- Omitting `--prompt` uses the agent's built-in default (recorded as `null` in metadata.json)
+
+**Current agents:**
+
+| Agent | Loop | DB tool | Attachment tool | Default prompt |
+|---|---|---|---|---|
+| `mock` | none | none | none | none |
+| `llm_direct` | none | none | none | none |
+| `react` | ReAct | none | ReadFullDocument | none |
+| `react_naive_rag` | ReAct | SearchCorpusTool (NaiveVectorRetrieval + NAIVE_PDF_CORPUS) | ReadFullDocument (when attachments present) | compliance_v1.txt |
 
 ---
 
