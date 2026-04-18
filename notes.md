@@ -343,6 +343,17 @@ The attachment tool is universal and not reflected in the agent name.
 
 ---
 
+## Review tooling (future)
+
+Reviewing eval runs through raw CSV and trace JSON files is awkward — markdown in cells
+doesn't render, and outcomes and traces are not shown together. A lightweight HTML report
+generator (one file per run, fully offline, no external dependencies) would be valuable.
+Previous attempt (2026-04-18) was abandoned: Python-only stdlib approach was correct in
+principle but had reliability issues in the development environment that made it impossible
+to confirm working. Defer until there is a clear need and a clean opportunity to do it properly.
+
+---
+
 ## Open questions
 
 - How do we force the agent to ground claims in retrieved documents rather than training
