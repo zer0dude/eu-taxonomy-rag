@@ -121,6 +121,16 @@ overrides it for experimental runs. The override is recorded in `metadata.json`;
 `--prompt` records `null`. This means an agent without a default will silently use
 `"You are a helpful assistant."` — design agents with explicit defaults.
 
+**8. Last-iteration warning must be aligned with the compliance prompt.**
+The loop injects a `[Final research step]` user message before the last LLM call, and
+makes one post-loop synthesis call if the model still makes tool calls. Neither is enough
+alone: `compliance_v1.txt` also has a "Research time limits" section establishing that a
+`PRELIMINARY — research incomplete` answer is explicit policy. Prompt and loop must agree
+or the stricter instruction wins and the agent still refuses. Token usage
+(`prompt_tokens` / `completion_tokens`) is now captured from every `litellm.completion()`
+call via `tracer.log_usage()` and surfaced per-iteration in traces, per-question in
+`outcomes.csv`, and as run totals in `metadata.json`. Ollama may return zeros.
+
 ---
 
 ## Eval infrastructure
@@ -144,7 +154,7 @@ Each run saves to `runs/{YYYYMMDD}_{HHMMSS}_{agent}_{question_set}/`:
 | 2026-04-18 | react_naive_rag | simple_v1 | 9/10 — 1 timeout (iteration cap) |
 | 2026-04-18 | react_naive_rag | hard_01 | 1/3 — 2 timeouts (iteration cap) |
 
-Root cause of timeouts: compliance prompt + low iteration cap. See learning #2 above.
+Root cause of timeouts: compliance prompt + low iteration cap. See learning #2 above. Fixed in v1.1 — see learning #8 below.
 
 ---
 
@@ -186,7 +196,8 @@ Connect: host `postgres`, port `5432`, db/user/password `taxonomy`.
 
 ## Next steps (v1 baseline)
 
-1. **Fix compliance prompt** — add fallback instruction after N failed searches
-2. **HybridRetrieval** — implement in `retrieval/hybrid.py` using `reference/rag/hybrid.py` as reference; wire to a new `react_hybrid_rag` agent; compare against `react_naive_rag`
-3. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims
-4. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets, incomplete data)
+1. ~~**Fix compliance prompt**~~ — done (v1.1): last-iteration warning + prompt fallback section
+2. **Re-run hard_01 eval** — confirm timeouts are resolved and preliminary answers are labelled correctly
+3. **HybridRetrieval** — implement in `retrieval/hybrid.py` using `reference/rag/hybrid.py` as reference; wire to a new `react_hybrid_rag` agent; compare against `react_naive_rag`
+4. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims
+5. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets, incomplete data)

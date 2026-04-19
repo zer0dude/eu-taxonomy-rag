@@ -8,6 +8,9 @@ and agent designs. Prioritise clean interfaces and swappability over cleverness.
 
 Read `notes.md` at the start of a session to get oriented quickly.
 
+After the user greenlights tests, update `notes.md` (new learnings, revised next steps)
+**before** committing. Do not commit without a notes update when behaviour or architecture changed.
+
 ---
 
 ## Architecture overview
