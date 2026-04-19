@@ -41,8 +41,11 @@ class FileTracer:
             "final_answer": None,
             "total_iterations": 0,
             "duration_seconds": None,
+            "token_totals": {"input_tokens": 0, "output_tokens": 0},
         }
         self._current_iteration: dict | None = None
+        self._input_tokens: int = 0
+        self._output_tokens: int = 0
 
     # ------------------------------------------------------------------
     # Public interface
@@ -72,9 +75,30 @@ class FileTracer:
         self._current_iteration = {
             "index": iteration_index,
             "reasoning": text,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
             "tool_calls": [],
         }
         self._data["iterations"].append(self._current_iteration)
+
+    def log_usage(
+        self,
+        iteration_index: int,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        """Record token usage for the current iteration's LLM call."""
+        if self._current_iteration is None or self._current_iteration["index"] != iteration_index:
+            self._current_iteration = {
+                "index": iteration_index,
+                "reasoning": "",
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+                "tool_calls": [],
+            }
+            self._data["iterations"].append(self._current_iteration)
+        self._current_iteration["usage"]["input_tokens"] = input_tokens
+        self._current_iteration["usage"]["output_tokens"] = output_tokens
+        self._input_tokens += input_tokens
+        self._output_tokens += output_tokens
 
     def log_tool_call(
         self,
@@ -113,10 +137,15 @@ class FileTracer:
 
         self._current_iteration["tool_calls"].append(entry)
 
+    @property
+    def token_totals(self) -> dict:
+        return {"input_tokens": self._input_tokens, "output_tokens": self._output_tokens}
+
     def record_output(self, final_answer: str, duration_seconds: float) -> None:
         self._data["final_answer"] = final_answer
         self._data["total_iterations"] = len(self._data["iterations"])
         self._data["duration_seconds"] = round(duration_seconds, 3)
+        self._data["token_totals"] = self.token_totals
 
     def save(self, path: str | Path) -> None:
         """Write accumulated trace to disk as indented JSON (utf-8).

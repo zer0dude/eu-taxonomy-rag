@@ -279,6 +279,7 @@ def main() -> None:
         tracer.record_output(answer, q_duration)
         tracer.save(run_dir / "traces" / f"{item['id']}_trace.json")
 
+        usage = tracer.token_totals
         notes = _get_evaluator_notes(item)
         rows.append({
             "question_id": item["id"],
@@ -292,10 +293,15 @@ def main() -> None:
             "key_citations": " | ".join(notes["key_citations"]),
             "reference_answer": notes["reference_answer"],
             "agent_answer": answer,
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"],
             "human_score": "",
             "human_notes": "",
         })
     duration = time.monotonic() - t_start
+
+    total_input_tokens = sum(r["input_tokens"] for r in rows)
+    total_output_tokens = sum(r["output_tokens"] for r in rows)
 
     # Write metadata.json
     metadata = {
@@ -308,6 +314,11 @@ def main() -> None:
         "truncate_chars": args.truncate_chars if args.log_level == "truncated" else None,
         "total_questions": len(rows),
         "duration_seconds": round(duration, 3),
+        "token_totals": {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "note": "Counts may be zero for providers that do not report usage (e.g. Ollama).",
+        },
     }
     with open(run_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
@@ -325,6 +336,8 @@ def main() -> None:
         "key_citations",
         "reference_answer",
         "agent_answer",
+        "input_tokens",
+        "output_tokens",
         "human_score",
         "human_notes",
     ]
@@ -340,6 +353,7 @@ def main() -> None:
     print(f"Questions: {questions_path.relative_to(REPO_ROOT)}  ({len(rows)} items)")
     print(f"Prompt:    {prompt_path.relative_to(REPO_ROOT) if prompt_path else '(agent default)'}")
     print(f"Duration:  {duration:.3f}s")
+    print(f"Tokens:    {total_input_tokens} in / {total_output_tokens} out")
     print(f"Output:    {run_dir.relative_to(REPO_ROOT)}/")
     print(f"           +-- metadata.json")
     print(f"           +-- outcomes.csv")

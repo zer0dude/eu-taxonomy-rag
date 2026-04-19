@@ -69,7 +69,17 @@ class AgentLoop:
         """
         msgs = list(messages)  # local copy — do not mutate caller's list
 
+        _FINAL_ITERATION_MSG = (
+            "[Final research step] You must now deliver your best available answer. "
+            "If your research is incomplete, label it clearly as PRELIMINARY and state "
+            "what you found, what is still missing, and what evidence would complete "
+            "the assessment. A transparent preliminary answer is required."
+        )
+
         for iteration in range(self._max_iterations):
+            if iteration == self._max_iterations - 1:
+                msgs.append({"role": "user", "content": _FINAL_ITERATION_MSG})
+
             response = litellm.completion(
                 **self._kwargs,
                 messages=msgs,
@@ -77,12 +87,17 @@ class AgentLoop:
                 max_tokens=self._max_tokens,
             )
 
+            usage = getattr(response, "usage", None)
+            input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            output_tokens = getattr(usage, "completion_tokens", 0) or 0
+
             choice = response.choices[0]
             message = choice.message
 
             # content is None when finish_reason == "tool_calls" — always guard
             reasoning = message.content or ""
             tracer.log_reasoning(iteration + 1, reasoning)
+            tracer.log_usage(iteration + 1, input_tokens, output_tokens)
 
             if choice.finish_reason == "stop":
                 return reasoning
@@ -124,4 +139,19 @@ class AgentLoop:
                 or f"[AgentLoop] Unexpected finish_reason: {choice.finish_reason}"
             )
 
-        return "[AgentLoop] Max iterations reached without a final answer."
+        # Reached only if the final iteration ended with tool_calls rather than stop.
+        # Force one synthesis call so the agent always returns readable output.
+        msgs.append({"role": "user", "content": _FINAL_ITERATION_MSG})
+        response = litellm.completion(
+            **self._kwargs,
+            messages=msgs,
+            tools=toolkit.to_litellm_schema(),
+            max_tokens=self._max_tokens,
+        )
+        usage = getattr(response, "usage", None)
+        tracer.log_usage(
+            self._max_iterations + 1,
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+        )
+        return response.choices[0].message.content or "[AgentLoop] No content returned on final synthesis."

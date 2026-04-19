@@ -227,7 +227,10 @@ class TestAgentLoopToolCall:
 
 
 class TestAgentLoopMaxIterations:
-    def test_returns_sentinel_at_max_iterations(self):
+    def test_returns_synthesis_result_at_max_iterations(self):
+        # When all iterations end in tool_calls, the post-loop synthesis call
+        # also returns a tool_call response (empty content), so the fallback
+        # sentinel is returned. A real model would return stop + text instead.
         loop = AgentLoop(completion_kwargs={"model": "test-model"}, max_iterations=2)
         toolkit = _FakeToolKit()
 
@@ -237,7 +240,7 @@ class TestAgentLoopMaxIterations:
         ):
             result = loop.run([{"role": "user", "content": "Q"}], toolkit)
 
-        assert "Max iterations" in result
+        assert "final synthesis" in result
 
     def test_tool_called_exactly_max_iterations_times(self):
         loop = AgentLoop(completion_kwargs={"model": "test-model"}, max_iterations=3)
