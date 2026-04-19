@@ -59,10 +59,6 @@ class ToolKit:
             for t in self._tools.values()
         ]
 
-    def to_anthropic_schema(self) -> list[dict]:
-        """Deprecated — delegates to to_litellm_schema(). Remove after all callers updated."""
-        return self.to_litellm_schema()
-
     def run(self, tool_name: str, tool_input: dict) -> str:
         """Dispatch a tool call: look up by name and execute."""
         tool = self._tools.get(tool_name)

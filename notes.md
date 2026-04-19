@@ -1,217 +1,157 @@
 # EU Taxonomy RAG — Working Notes
 
-## Experimental plan
+## Architecture
 
-Build incrementally. Each step should be testable and produce a measurable result before moving on.
+The system is built in strict layers. Each layer depends only on the layers below it.
 
-1. **Evaluation baseline** — refine golden questions, lock down scoring method
-2. **Bare LLM baseline** — run golden questions through the LLM with no context or tools
-   - Records the floor: what does the LLM already know from training?
-3. **Agent tracing / run logs** — structured per-question log of what the agent did
-   (tool calls, reasoning, iterations) so results can be inspected and compared
-4. **PDF spike** — extract raw text from one real document.
-5. **Naive ingestion** — implement `PDFParser` + `NaiveChunker`, ingest one document
-6. **Naive RAG tool** — expose the vector DB as an agent tool; compare to bare-LLM floor
-7. **Grounded reasoning** — constrain the agent to cite official documents for every claim;
-   no relying on training memory for regulatory content
-8. **Iterate on retrieval** — vary chunker, retrieval method (`HybridRAG`, `AdvancedRAG`), compare scores
-9. **Harder eval sets** — realistic attachments: messy URLs, internal spreadsheets with
-   incomplete data; questions where data is insufficient or contradictory
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Layer 7 — Agents          agents/                                  │
+│  AgentProtocol, AgentLoop, per-agent composition                    │
+│  react, react_naive_rag, llm_direct, mock                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 6 — Agent tools     tools/                                   │
+│  Tool protocol, ToolKit, SearchCorpusTool, ReadFullDocument         │
+│  tools/base.py  tools/search/corpus.py  tools/attachment/read_full │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 5 — Retrieval       retrieval/                               │
+│  Retriever protocol, RetrievalResult, CorpusScope                   │
+│  NaiveVectorRetrieval → future: HybridRetrieval, AdvancedRetrieval  │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 4 — DB              db/                                      │
+│  DocumentRepository — insert, vector_search, hybrid_search, get_all│
+│  Raw psycopg3, no ORM. vector(384) via pgvector HNSW index.         │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 3 — Ingestion       ingestion/                               │
+│  strategies/ — named recipes (NaivePDFStrategy)                     │
+│    └─ build_pipeline() → IngestionPipeline(parser, chunker,         │
+│                          embedder, repo, strategy_name)             │
+│  parsers/  — PDFParser → ParsedDocument (per-page text + metadata)  │
+│  chunkers/ — NaiveChunker → list[Chunk]                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 2 — Extractors      readers/                                 │
+│  AttachmentReader protocol, ReaderRegistry                          │
+│  PDFReader delegates to PDFParser for text; used by ReadFullDocument│
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 1 — Foundation      embeddings/  llm/  config.py  tracing/  │
+│  Embedder (sentence-transformers), AgentLoop (litellm), Settings,   │
+│  Tracer protocol, FileTracer, NullTracer                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-**Key principle:** the agent layer only adds value if the underlying tools work. Don't add reasoning complexity on top of broken retrieval.
+**Cross-cutting concerns:**
+- `config.py` — `settings` singleton, read everywhere via `from taxonomy_rag.config import settings`
+- `tracing/` — `Tracer` protocol, `FileTracer`, `NullTracer`; passed through every agent call
+- `reference/rag/` — prior-project code kept as reference for implementing `HybridRetrieval` and `AdvancedRetrieval`
 
 ---
 
-## Current status
+## Agent model
 
-- [x] Evaluation baseline
-- [x] Bare LLM baseline (llm_direct on simple_v1 + golden_dataset_v1)
-- [x] ReAct agent with attachment tools (react on hard_01)
-- [x] Agent tracing / run logs
-- [x] PDF spike
-- [x] Naive ingestion
-- [x] Naive RAG tool
-- [x] Naive RAG tool  ← done
-- [ ] Grounded reasoning
-- [ ] Retrieval iteration
-- [ ] Harder eval sets
+Each agent is defined by three explicit components:
+
+```
+┌───────────────────────── Agent ────────────────────────────────────┐
+│  Core loop    AgentLoop (llm/loop.py)                              │
+│  Default prompt  prompts/<name>.txt  (baked in; --prompt overrides)│
+│  ToolKit:                                                          │
+│    ┌── DB retrieval tool ──────────────────────────────────────┐   │
+│    │  SearchCorpusTool(retrieval: Retriever, scope: CorpusScope)│   │
+│    └───────────────────────────────────────────────────────────┘   │
+│    ┌── Attachment tool (when question has attachments) ─────────┐  │
+│    │  ReadFullDocument(path_map, registry: ReaderRegistry)      │  │
+│    └───────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Adding a new retrieval method:** implement `Retriever` in `retrieval/`, pass it to
+`SearchCorpusTool`, register a new agent in `agents/`. No other changes needed.
+
+**Adding a new agent tool:** implement `Tool` protocol in `tools/`, add to ToolKit in the agent.
+
+**Current agents:**
+
+| Agent | Loop | DB tool | Attachment | Default prompt |
+|---|---|---|---|---|
+| `mock` | none | none | none | none |
+| `llm_direct` | none | none | none | none |
+| `react` | ReAct | none | ReadFullDocument | none |
+| `react_naive_rag` | ReAct | SearchCorpusTool (NaiveVectorRetrieval + NAIVE_PDF_CORPUS) | ReadFullDocument | compliance_v1.txt |
 
 ---
 
-## Eval infrastructure (completed)
+## Key learnings
 
-**scripts/evaluate.py** — modular eval script. Three interchangeable axes:
-- `--questions` — any questions JSON (simple_v1, golden_dataset_v1, hard_01, ...)
-- `--prompt` — any prompt file from `prompts/`
-- `--agent` — any registered agent name; auto-discovered from `src/taxonomy_rag/agents/`
+**1. RAG value is grounded citations, not factual correctness.**
+Even without RAG, the LLM answers EU Taxonomy questions correctly from training memory
+(confirmed: react on hard_01 — 3/3 correct with no retrieval). The value of RAG is
+producing audit-quality output that cites specific document sections. That is the target.
+
+**2. Compliance prompt + iteration cap interact badly.**
+The strict "do not answer without retrieved evidence" prompt causes timeout loops when
+retrieval fails to find a conclusive chunk. The agent repeats the same search until it
+hits the cap and returns a sentinel. Fix: add a fallback instruction — "after 5 failed
+searches, synthesise the best answer from what you have, stating what is missing."
+
+**3. LiteLLM is the right abstraction layer.**
+`litellm.completion()` uses the OpenAI message/tool format as canonical wire format,
+works identically across Anthropic, OpenAI, and Ollama. No provider-specific code paths
+in agent logic. Migration from LangChain: removed 5 packages, gained clarity.
+
+**4. AgentLoop is stateless and reusable.**
+All ReAct-style agents share one loop class (`llm/loop.py`). Sub-agents can be
+registered as ordinary tools in ToolKit — the "agents-as-tools" pattern requires no
+special framework. Implementation details: `message.content` is `None` when
+`finish_reason == "tool_calls"` (guard with `or ""`); `call.function.arguments` is a
+JSON string (always `json.loads()` before passing to toolkit).
+
+**5. Strategy tagging enables A/B retrieval comparison.**
+Every chunk stores `ingestion_strategy` in its JSONB metadata. `CorpusScope` filters on
+this field via the GIN index. Two ingestion strategies can coexist in the same DB and be
+queried independently — no table isolation needed.
+
+**6. DB row_factory must be set per method.**
+`psycopg3` connection pools can return connections with a row_factory set by a prior
+caller. Every repository method must set its own row_factory at the top of its connection
+block (`dict_row` for reads, `tuple_row` for inserts). Never rely on pool default.
+
+**7. Prompt ownership is per-agent, not per-run.**
+Each agent class loads its default prompt at import time. `--prompt` on `evaluate.py`
+overrides it for experimental runs. The override is recorded in `metadata.json`; omitting
+`--prompt` records `null`. This means an agent without a default will silently use
+`"You are a helpful assistant."` — design agents with explicit defaults.
+
+---
+
+## Eval infrastructure
+
+**`scripts/evaluate.py`** — three interchangeable axes:
+- `--questions` — any questions JSON (`eval/simple_v1/`, `eval/golden_dataset_v1/`, `eval/hard_01/`)
+- `--prompt` — any file from `prompts/`; omit to use agent default
+- `--agent` — any module in `src/taxonomy_rag/agents/` that exposes `get_agent()`
+- `--log-level` — `full` / `truncated` / `metadata` (default) / `none`
 
 Each run saves to `runs/{YYYYMMDD}_{HHMMSS}_{agent}_{question_set}/`:
-- `metadata.json` — machine-readable run summary (includes log_level used)
-- `outcomes.csv` — one row per question; human fills `human_score` and `human_notes`
-- `traces/{question_id}_trace.json` — structured per-question agent trace (see below)
+- `metadata.json` — machine-readable run summary
+- `outcomes.csv` — one row per question; fill `human_score` and `human_notes` manually
+- `traces/{question_id}_trace.json` — structured per-question agent trace
 
-**Question sets:**
-- `eval/simple_v1/questions.json` — 10 manufacturing eligibility questions, adversarial
-- `eval/golden_dataset_v1/questions.json` — 3 baseline wind/solar/safeguards questions
-- `eval/hard_01/questions.json` — 3 adversarial energy questions with PDF attachments
+**Eval results to date:**
 
-**Agents:**
-- `mock` — hardcoded fixed string; validates pipeline plumbing
-- `llm_direct` — bare Anthropic API call, no tools, no retrieval
-- `react` — Anthropic tool-use loop; reads attachments via `read_full_document` tool
+| Run | Agent | Questions | Result |
+|---|---|---|---|
+| 2026-04-13 | react (no RAG) | hard_01 | 3/3 correct — strong baseline |
+| 2026-04-18 | react_naive_rag | simple_v1 | 9/10 — 1 timeout (iteration cap) |
+| 2026-04-18 | react_naive_rag | hard_01 | 1/3 — 2 timeouts (iteration cap) |
 
-**Tracing (`--log-level`):**
-- `metadata` (default) — reasoning text + tool call names/inputs/sizes/timing; no content
-- `truncated` — as above, plus first N chars of each tool result (`--truncate-chars`, default 500)
-- `full` — complete tool result text stored in trace
-- `none` — no trace files written
-- Traces saved to `runs/{run_id}/traces/`; `NullTracer` used when log-level is none
-
-**Prompts:**
-- `prompts/base_v1.txt` — EU Taxonomy expert, eligibility vs alignment framing
+Root cause of timeouts: compliance prompt + low iteration cap. See learning #2 above.
 
 ---
 
-## Learnings
+## DB management (quick reference)
 
-**ReAct on hard_01 (2026-04-13):** The simple ReAct agent (Haiku 4.5, read_full_document
-tool only) gave correct and precise answers on all three adversarial questions, with good
-reasoning, despite having no access to the EU Taxonomy regulatory documents. The agent
-read all relevant attachments in the first iteration (batching tool calls) and answered in
-the second. This is a strong baseline — it also means the bar for "does RAG help?" is
-higher than expected, since the LLM already knows the regulatory content from training.
-
-**Key implication:** the value of RAG for this project is not just answering correctly — it
-is *grounded reasoning with citations*. The model can get the right answer from memory; what
-it cannot do from memory alone is produce audit-quality output that cites specific document
-sections as its source. That is the real target.
-
-**LangChain → LiteLLM migration (2026-04-16):** Replaced all LangChain usage with LiteLLM.
-Decision rationale: LangChain is heavy, opinionated, and makes swapping providers harder
-than it should be. LiteLLM is a thin normalization layer — `litellm.completion()` works
-identically across Anthropic, OpenAI, and Ollama using the OpenAI message/tool format as
-the canonical wire format. No provider-specific code paths in agent logic.
-
-Key changes made:
-- `pyproject.toml`: removed 5 langchain-* packages, added `litellm>=1.0`
-- `config.py`: added `litellm_model_string` computed field (bare name for Anthropic,
-  `ollama/{model}` prefix for Ollama, bare name for OpenAI)
-- `llm/provider.py`: full rewrite — `get_model_string()` + `get_completion_kwargs()`
-  with `lru_cache` (must call `.cache_clear()` between tests that patch settings)
-- `tools/base.py`: `to_anthropic_schema()` renamed to `to_litellm_schema()`; output
-  changed to OpenAI function-calling format `{"type":"function","function":{...}}`
-- `agents/react.py`: simplified ~65 lines; delegates entirely to new `AgentLoop`
-- `agents/llm_direct.py`: uses `litellm.completion()` instead of `anthropic` SDK
-- `rag/naive.py`, `rag/hybrid.py`, `rag/advanced.py`: replaced `ChatPromptTemplate |
-  get_llm()` chains with direct `litellm.completion()` calls
-- `agents/tools/search.py`, `agents/tools/filters.py`: rewritten from `@tool` decorators
-  to plain classes implementing the Tool protocol (bodies remain `NotImplementedError`)
-
-**AgentLoop (2026-04-16):** Extracted the tool-use loop from react.py into a new shared
-class `llm/loop.py`. `AgentLoop` is stateless and reusable — all future ReAct-style
-agents and orchestrators share the same loop code. This is the foundation for multi-agent
-setups: sub-agents can be registered as ordinary tools in `ToolKit`, exposed to an
-orchestrator using the same `AgentLoop`. The "agents-as-tools" pattern requires no special
-framework — just wrap an agent's `.answer()` call as a `Tool.run()`.
-
-Critical implementation details to remember:
-- `message.content` is `None` when `finish_reason == "tool_calls"` — always guard with `or ""`
-- `call.function.arguments` is a JSON *string* — always `json.loads()` before passing to `toolkit.run()`
-- Serialize assistant message back to dict via `message.model_dump()` (fall back to `dict(message)`)
-
-**Tracing confirmed working post-migration (2026-04-16):** `AgentLoop` calls
-`tracer.log_reasoning()` and `tracer.log_tool_call()` identically to the old react.py.
-With Claude/Haiku, `message.content` is non-empty even during tool-call iterations
-(the model explains its reasoning before calling tools), so structured traces are rich.
-hard_01 re-run confirmed: same 2-iteration pattern, all attachments batched in iteration 1,
-detailed answers in iteration 2. Architecture and eval quality unchanged by migration.
-
-**Test suite established (2026-04-16):** Created full test suite from scratch (none existed
-before). 59 tests total: 47 unit (no external services) + 12 integration (skip if no Docker).
-- `tests/unit/test_provider.py` — model string + completion kwargs per provider
-- `tests/unit/test_loop.py` — AgentLoop: text-only, tool calls, multiple tools, max iterations
-- `tests/unit/test_toolkit.py` — to_litellm_schema format, run dispatch, error handling
-- `tests/unit/test_rag.py` — NaiveRAG + HybridRAG with mocked repo + litellm
-- `tests/unit/test_agents_unit.py` — MockAgent + LLMDirectAgent with mocked litellm
-- `tests/integration/test_repository.py` — live DB CRUD, vector search, hybrid search, metadata filter
-
-**Bug fixed: psycopg3 pool row_factory contamination (2026-04-16):** `get_by_id()` was
-setting `conn.row_factory = dict_row` on a connection and returning it to the pool.
-When `insert()` reused that connection, `fetchone()` returned a dict, and `row[0]` failed
-with `KeyError: 0`. Fix: added explicit `conn.row_factory = tuple_row` at the start of
-`insert()`. Pattern to follow: every method that changes `row_factory` must do so at the
-top of its own connection block.
-
----
-
-## Naive ingestion (2026-04-17)
-
-Implemented `PDFParser` (pymupdf `page.get_text()`) and `NaiveChunker` (sliding
-word-window, default 512 words / 50 overlap). Both live in
-`src/taxonomy_rag/ingestion/parsers/pdf.py` and
-`src/taxonomy_rag/ingestion/chunkers/naive.py`.
-
-`document_id` is derived from the filename (`CELEX_32021R2139_EN_TXT.pdf` →
-`32021r2139`); `document_type` is inferred from the parent directory name
-(`delegated_acts_technical_criteria` → `delegated_act`, etc.).
-
-Full corpus ingested via `scripts/ingest_corpus.py` (14 PDFs). Single-file
-ingestion still available via the existing `scripts/ingest.py`.
-
-39 unit tests added in `tests/unit/test_ingestion.py` — all passing.
-
-**Infrastructure:** pgAdmin added to `docker-compose.yml`. After `docker compose
-up -d pgadmin`, the UI is available at http://localhost:5050
-(`admin@local.dev` / `admin`). Connect to host `postgres`, port `5432`,
-db/user/password all `taxonomy`. Useful for browsing chunks and running ad-hoc
-SQL against the documents table.
-
----
-
-## Ingestion strategy architecture (2026-04-17)
-
-Added a `strategies/` layer so that new ingestion recipes can be added without
-touching any existing code.
-
-**Layers:**
-- `src/taxonomy_rag/ingestion/parsers/` — parse primitives (PDFParser, etc.)
-- `src/taxonomy_rag/ingestion/chunkers/` — chunk primitives (NaiveChunker, etc.)
-- `src/taxonomy_rag/ingestion/strategies/` — named compositions (NaivePDFStrategy, ...)
-- `src/taxonomy_rag/ingestion/strategies/registry.py` — `DEFAULT_REGISTRY` (one line to add a strategy)
-- `scripts/ingest.py` / `scripts/ingest_corpus.py` — CLI, never changes when new strategies are added
-
-**Adding a new strategy:** create a new file in `strategies/`, then add one line to
-`DEFAULT_REGISTRY` in `registry.py`. No script or pipeline changes needed.
-
-**Every chunk now stores:**
-```
-ingestion_strategy  — e.g. "naive_pdf"
-ingest_run_id       — UUID per corpus run (printed by ingest_corpus.py)
-chunk_strategy      — chunker name e.g. "naive"
-document_id, document_type, source, chunk_index, page_range
-```
-
-**Filtered search:** `DocumentRepository.vector_search()` and `hybrid_search()` now
-accept an optional `metadata_filter` dict (JSONB `@>` operator, uses GIN index).
-`NaiveRAG(ingestion_strategy="naive_pdf")` scopes all retrieval to that strategy.
-
-28 new unit tests in `tests/unit/test_strategies.py` — 67 unit tests total.
-
-**Action needed before next ingest:** the corpus was first ingested without
-`ingestion_strategy` / `ingest_run_id`. Run `TRUNCATE documents;` in pgAdmin or psql,
-then re-ingest with `scripts/ingest_corpus.py --strategy naive_pdf`.
-
-**Note on scripts/:** `scripts/` contains CLI entry points (`ingest.py`,
-`ingest_corpus.py`, `evaluate.py`) — thin orchestration wrappers over library code
-in `src/`. One-off exploratory scripts (e.g. `spike_pdf.py`) do not belong here and
-should be deleted once their purpose is served.
-
----
-
-## DB management
-
-**Inspect what is in the DB** (pgAdmin Query Tool or psql):
 ```sql
+-- What's in the DB
 SELECT metadata->>'ingestion_strategy' AS strategy,
        metadata->>'ingest_run_id'      AS run_id,
        COUNT(*)                         AS chunks,
@@ -220,159 +160,33 @@ SELECT metadata->>'ingestion_strategy' AS strategy,
 FROM documents
 GROUP BY 1, 2
 ORDER BY started;
-```
 
-**Delete a specific run** (re-ingest after a bug fix):
-```sql
-DELETE FROM documents WHERE metadata->>'ingest_run_id' = '<uuid>';
-```
-
-**Delete all chunks for one strategy:**
-```sql
-DELETE FROM documents WHERE metadata->>'ingestion_strategy' = 'naive_pdf';
-```
-
-**Delete legacy untagged chunks** (ingested before strategy tracking):
-```sql
-DELETE FROM documents WHERE metadata->>'ingestion_strategy' IS NULL;
-```
-
-**Wipe everything and start fresh:**
-```sql
-TRUNCATE documents;
-```
-
-**Inspect a specific document's chunks in order:**
-```sql
+-- Inspect a document's chunks
 SELECT id, metadata->>'page_range', LEFT(content, 120)
 FROM documents
 WHERE metadata->>'document_id' = '32021r2139'
   AND metadata->>'ingestion_strategy' = 'naive_pdf'
 ORDER BY (metadata->>'chunk_index')::int
 LIMIT 20;
+
+-- Delete a specific run
+DELETE FROM documents WHERE metadata->>'ingest_run_id' = '<uuid>';
+
+-- Delete all chunks for one strategy
+DELETE FROM documents WHERE metadata->>'ingestion_strategy' = 'naive_pdf';
+
+-- Wipe everything
+TRUNCATE documents;
 ```
 
----
-
-## Naive RAG tool eval (2026-04-18)
-
-First eval run with `react_naive_rag` (NaiveVectorRetrieval + NAIVE_PDF_CORPUS scope +
-`compliance_v1.txt` prompt) against `simple_v1` and `hard_01`.
-
-**simple_v1 (10 questions):** 9/10 answered fully. 1 question (MAN-EASY-3.1-004) hit the
-10-iteration cap and returned the sentinel instead of an answer.
-
-**hard_01 (3 questions):** 1/3 answered (ENE-HARD-002, correct). ENE-HARD-001 and
-ENE-HARD-003 hit the 10-iteration cap.
-
-**Root cause of max-iterations failures:** The strict compliance prompt ("do not answer without
-retrieved evidence") interacts badly with a low iteration cap. When the agent cannot find a
-fully conclusive retrieved chunk, it keeps searching rather than synthesising a partial answer
-— then exhausts the cap and returns nothing. This is worse than a partial answer.
-
-**Fix options (not yet implemented):**
-- Raise `max_iterations` in `AgentLoop` (currently 10) — gives the agent more room to converge
-- Add an explicit instruction to `compliance_v1.txt`: "After at most 5 searches, synthesise the
-  best answer you can from what you have retrieved, stating clearly what is missing"
-- Both together
-
-**Tool use pattern confirmed working:**
-- Corpus search (`search_corpus`) fired correctly on all questions
-- Hard_01 correctly used both `read_full_document` (attachments first) then `search_corpus`
-- Traces confirm structured reasoning + tool call logging working as expected
+pgAdmin: `docker compose up -d pgadmin` → http://localhost:5050 (`admin@local.dev` / `admin`).
+Connect: host `postgres`, port `5432`, db/user/password `taxonomy`.
 
 ---
 
-## Agent architecture (2026-04-18)
+## Next steps (v1 baseline)
 
-As the project grows beyond one or two agents, each agent is now defined by three explicit
-components: a core agentic loop, a set of tools, and a default system prompt.
-
-```
-┌─────────────────── Agent ─────────────────────────────────────────┐
-│  Core loop (ReAct / AgentLoop)                                    │
-│  Default prompt (prompts/compliance_v1.txt)                       │
-│  ToolKit:                                                         │
-│    ┌─── DB retrieval tool ──────────────────────────────────────┐ │
-│    │  SearchCorpusTool                                          │ │
-│    │    retrieval: NaiveVectorRetrieval  ← HOW to search        │ │
-│    │    scope:     CorpusScope           ← WHAT to search       │ │
-│    └────────────────────────────────────────────────────────────┘ │
-│    ┌─── Attachment tool ────────────────────────────────────────┐ │
-│    │  ReadFullDocument (per-question path map)                  │ │
-│    └────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────┘
-```
-
-**Naming convention:** `{loop}_{primary_db_tool}` — e.g. `react_naive_rag`.
-Full composition (tools, scope, prompt file used) is recorded in `metadata.json` per eval run.
-The attachment tool is universal and not reflected in the agent name.
-
-**Tool taxonomy:**
-- *DB retrieval tools* — search the pgvector document store (SearchCorpusTool)
-- *Attachment tools* — read files supplied per-question (ReadFullDocument)
-- *Future* — web search, structured data lookup, etc.
-
-**Retrieval layer** (`src/taxonomy_rag/retrieval/`):
-- `RetrievalResult` — dataclass: doc_id, content, score, metadata
-- `CorpusScope` — defines which chunks are accessible (ingestion_strategy, document_type)
-  - `to_metadata_filter()` builds the JSONB `@>` filter passed to `vector_search()`
-  - Pre-defined: `NAIVE_PDF_CORPUS = CorpusScope(ingestion_strategy="naive_pdf")`
-- `NaiveVectorRetrieval` — embed → cosine vector search → list[RetrievalResult]
-  - No LLM call; pure retrieval primitive
-  - Composed with a CorpusScope inside SearchCorpusTool
-
-**Search tool** (`src/taxonomy_rag/tools/search/corpus.py`):
-- `SearchCorpusTool(retrieval, scope)` implements the Tool protocol
-- `run(query)` → formatted numbered blocks: document ID, page range, score, chunk text
-- The agent sees raw chunks and must synthesise and cite them in its answer
-
-**Prompt ownership:**
-- Default prompt is baked into each agent class (loaded from `prompts/` at import time)
-- `--prompt` on evaluate.py overrides the default for experimental runs
-- Omitting `--prompt` uses the agent's built-in default (recorded as `null` in metadata.json)
-
-**Current agents:**
-
-| Agent | Loop | DB tool | Attachment tool | Default prompt |
-|---|---|---|---|---|
-| `mock` | none | none | none | none |
-| `llm_direct` | none | none | none | none |
-| `react` | ReAct | none | ReadFullDocument | none |
-| `react_naive_rag` | ReAct | SearchCorpusTool (NaiveVectorRetrieval + NAIVE_PDF_CORPUS) | ReadFullDocument (when attachments present) | compliance_v1.txt |
-
----
-
-## Review tooling (future)
-
-Reviewing eval runs through raw CSV and trace JSON files is awkward — markdown in cells
-doesn't render, and outcomes and traces are not shown together. A lightweight HTML report
-generator (one file per run, fully offline, no external dependencies) would be valuable.
-Previous attempt (2026-04-18) was abandoned: Python-only stdlib approach was correct in
-principle but had reliability issues in the development environment that made it impossible
-to confirm working. Defer until there is a clear need and a clean opportunity to do it properly.
-
----
-
-## Open questions
-
-- How do we force the agent to ground claims in retrieved documents rather than training
-  memory? Prompt constraint? Tool design (e.g. tool that returns article text forces a
-  citation)?
-- For the RAG DB tool: should the agent get raw chunk text, or structured results
-  (article reference + text)? Structured results make citations easier.
-- What does a "realistic" messy attachment look like for hard_02? Candidates:
-  a real company website URL, an internal capex spreadsheet with vague row labels,
-  a scanned PDF where OCR quality is poor.
-
----
-
-## Next steps
-
-1. **Re-ingest corpus** — `TRUNCATE documents;` then `scripts/ingest_corpus.py --strategy naive_pdf`
-2. **Build corpus search tool** — wrap `DocumentRepository.vector_search()` as an agent
-   tool; run eval and compare to `llm_direct` baseline
-3. **Grounded reasoning prompt/constraint** — experiment with forcing the agent to only
-   make claims it can back with a retrieved document section
-4. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets,
-   incomplete or contradictory data)
+1. **Fix compliance prompt** — add fallback instruction after N failed searches
+2. **HybridRetrieval** — implement in `retrieval/hybrid.py` using `reference/rag/hybrid.py` as reference; wire to a new `react_hybrid_rag` agent; compare against `react_naive_rag`
+3. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims
+4. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets, incomplete data)

@@ -10,7 +10,6 @@ class CorpusScope:
     Both fields are optional; omitting them imposes no restriction on that axis.
     """
 
-    name: str
     ingestion_strategy: str | None = None
     document_type: str | None = None
 
@@ -23,7 +22,4 @@ class CorpusScope:
         return f or None
 
 
-NAIVE_PDF_CORPUS = CorpusScope(
-    name="naive_pdf_corpus",
-    ingestion_strategy="naive_pdf",
-)
+NAIVE_PDF_CORPUS = CorpusScope(ingestion_strategy="naive_pdf")

@@ -17,16 +17,16 @@ from taxonomy_rag.retrieval.scope import CorpusScope, NAIVE_PDF_CORPUS
 
 class TestCorpusScope:
     def test_strategy_only(self):
-        scope = CorpusScope(name="s", ingestion_strategy="naive_pdf")
+        scope = CorpusScope(ingestion_strategy="naive_pdf")
         assert scope.to_metadata_filter() == {"ingestion_strategy": "naive_pdf"}
 
     def test_document_type_only(self):
-        scope = CorpusScope(name="s", document_type="delegated_act")
+        scope = CorpusScope(document_type="delegated_act")
         assert scope.to_metadata_filter() == {"document_type": "delegated_act"}
 
     def test_both_fields(self):
         scope = CorpusScope(
-            name="s", ingestion_strategy="naive_pdf", document_type="delegated_act"
+            ingestion_strategy="naive_pdf", document_type="delegated_act"
         )
         assert scope.to_metadata_filter() == {
             "ingestion_strategy": "naive_pdf",
@@ -34,11 +34,10 @@ class TestCorpusScope:
         }
 
     def test_neither_field_returns_none(self):
-        scope = CorpusScope(name="s")
+        scope = CorpusScope()
         assert scope.to_metadata_filter() is None
 
     def test_naive_pdf_corpus_constant(self):
-        assert NAIVE_PDF_CORPUS.name == "naive_pdf_corpus"
         assert NAIVE_PDF_CORPUS.ingestion_strategy == "naive_pdf"
         assert NAIVE_PDF_CORPUS.document_type is None
 
@@ -120,7 +119,7 @@ class TestNaiveVectorRetrieval:
     def test_scope_passes_metadata_filter(self):
         repo = _make_repo()
         emb = _make_embedder()
-        scope = CorpusScope(name="s", ingestion_strategy="naive_pdf")
+        scope = CorpusScope(ingestion_strategy="naive_pdf")
         retrieval = NaiveVectorRetrieval(repo=repo, embedder=emb)
 
         retrieval.retrieve("query", scope=scope)

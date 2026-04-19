@@ -57,10 +57,6 @@ class TestToLiteLLMSchema:
         names = {s["function"]["name"] for s in schema}
         assert names == {"double_value", "exploding"}
 
-    def test_deprecated_alias_returns_same_result(self):
-        tk = ToolKit([DoubleValueTool()])
-        assert tk.to_anthropic_schema() == tk.to_litellm_schema()
-
 
 class TestToolKitRun:
     def test_dispatches_to_correct_tool(self):

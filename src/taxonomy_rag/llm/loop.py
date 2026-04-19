@@ -22,7 +22,7 @@ from typing import Any
 import litellm
 
 from taxonomy_rag.tools.base import ToolKit
-from taxonomy_rag.tracing.base import NullTracer
+from taxonomy_rag.tracing.base import NullTracer, Tracer
 
 _MAX_TOKENS = 2048
 _MAX_ITERATIONS = 10
@@ -52,7 +52,7 @@ class AgentLoop:
         self,
         messages: list[dict],
         toolkit: ToolKit,
-        tracer: NullTracer = NullTracer(),
+        tracer: Tracer = NullTracer(),
     ) -> str:
         """Execute the tool-use loop and return the final text answer.
 

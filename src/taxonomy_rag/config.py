@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
 
     # Ingestion defaults — can be overridden per experiment
-    default_chunk_size: int = 512       # tokens
-    default_chunk_overlap: int = 50     # tokens
+    default_chunk_size: int = 512       # words (NaiveChunker uses whitespace split, not a tokenizer)
+    default_chunk_overlap: int = 50     # words
     default_chunker: str = "naive"      # "naive" | "structural" | "hierarchical"
 
     @computed_field

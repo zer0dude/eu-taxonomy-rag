@@ -13,7 +13,7 @@ import litellm
 
 from taxonomy_rag.llm.provider import get_completion_kwargs
 from taxonomy_rag.readers.base import AttachmentInfo
-from taxonomy_rag.tracing.base import NullTracer
+from taxonomy_rag.tracing.base import NullTracer, Tracer
 
 _MAX_TOKENS = 1024
 
@@ -38,8 +38,8 @@ class LLMDirectAgent:
         question: str,
         context: str = "",
         prompt: str = "",
-        attachments: list[AttachmentInfo] = [],
-        tracer: NullTracer = NullTracer(),
+        attachments: list[AttachmentInfo] | None = None,
+        tracer: Tracer = NullTracer(),
     ) -> str:
         parts: list[str] = []
         if context:

@@ -1,26 +1,20 @@
-"""PDF reader using pymupdf (fitz).
+"""PDF reader — delegates to PDFParser for text extraction.
 
-pymupdf is already a project dependency (pymupdf>=1.24 in pyproject.toml).
-Each page's text is extracted and joined with a double newline. No chunking
-is performed here — that is the tool layer's responsibility.
+PDFParser (ingestion/parsers/pdf.py) is the single fitz caller for PDFs.
+PDFReader's job is to flatten the per-page list into a single plain-text
+string suitable for agent tool consumption (ReadFullDocument).
 """
 
 from __future__ import annotations
 
 
 class PDFReader:
-    """Extracts plain text from PDF files page by page."""
+    """Extracts plain text from PDF files by delegating to PDFParser."""
 
     def supports(self, source: str) -> bool:
         return source.lower().endswith(".pdf")
 
     def read(self, source: str) -> str:
-        import fitz  # pymupdf
-
-        doc = fitz.open(source)
-        try:
-            pages = [page.get_text() for page in doc]
-        finally:
-            doc.close()
-
-        return "\n\n".join(pages)
+        from taxonomy_rag.ingestion.parsers.pdf import PDFParser
+        doc = PDFParser().parse(source)
+        return "\n\n".join(doc.pages)

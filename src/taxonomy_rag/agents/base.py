@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from taxonomy_rag.readers.base import AttachmentInfo
-from taxonomy_rag.tracing.base import NullTracer
+from taxonomy_rag.tracing.base import NullTracer, Tracer
 
 
 @runtime_checkable
@@ -25,8 +25,8 @@ class AgentProtocol(Protocol):
         question: str,
         context: str = "",
         prompt: str = "",
-        attachments: list[AttachmentInfo] = [],
-        tracer: NullTracer = NullTracer(),
+        attachments: list[AttachmentInfo] | None = None,
+        tracer: Tracer = NullTracer(),
     ) -> str:
         """Return an answer string for the given question.
 

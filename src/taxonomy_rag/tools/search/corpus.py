@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from taxonomy_rag.retrieval.naive import NaiveVectorRetrieval
+from taxonomy_rag.retrieval.base import Retriever
 from taxonomy_rag.retrieval.scope import CorpusScope
 
 
 class SearchCorpusTool:
     """Agent tool: semantic search over the ingested EU Taxonomy document corpus.
 
-    Composes a retrieval method (NaiveVectorRetrieval) with a CorpusScope that
-    restricts which chunks are visible to this tool instance. Returns a formatted
-    string of numbered results, each with document ID, page range, similarity
-    score, and chunk text.
+    Composes any Retriever implementation with a CorpusScope that restricts
+    which chunks are visible to this tool instance. Returns a formatted string
+    of numbered results, each with document ID, page range, similarity score,
+    and chunk text.
+
+    Swap the retrieval argument to change the search strategy without touching
+    the agent or the tool interface.
     """
 
     name = "search_corpus"
@@ -36,7 +39,7 @@ class SearchCorpusTool:
 
     def __init__(
         self,
-        retrieval: NaiveVectorRetrieval,
+        retrieval: Retriever,
         scope: CorpusScope,
     ) -> None:
         self._retrieval = retrieval

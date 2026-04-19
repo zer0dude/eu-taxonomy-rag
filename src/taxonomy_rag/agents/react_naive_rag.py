@@ -26,9 +26,9 @@ from taxonomy_rag.retrieval.scope import NAIVE_PDF_CORPUS
 from taxonomy_rag.tools.attachment.read_full import ReadFullDocument
 from taxonomy_rag.tools.base import ToolKit
 from taxonomy_rag.tools.search.corpus import SearchCorpusTool
-from taxonomy_rag.tracing.base import NullTracer
+from taxonomy_rag.tracing.base import NullTracer, Tracer
 
-_PROMPT_PATH = Path(__file__).parent.parent.parent.parent / "prompts" / "compliance_v1.txt"
+_PROMPT_PATH = Path(__file__).parents[3] / "prompts" / "compliance_v1.txt"
 
 
 def get_agent() -> "ReactNaiveRagAgent":
@@ -63,9 +63,10 @@ class ReactNaiveRagAgent:
         question: str,
         context: str = "",
         prompt: str = "",
-        attachments: list[AttachmentInfo] = [],
-        tracer: NullTracer = NullTracer(),
+        attachments: list[AttachmentInfo] | None = None,
+        tracer: Tracer = NullTracer(),
     ) -> str:
+        attachments = attachments or []
         system_prompt = prompt or self._DEFAULT_PROMPT
 
         tools: list = [self._search_tool]

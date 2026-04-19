@@ -111,7 +111,7 @@ class TestSearchCorpusToolRun:
 
     def test_passes_query_and_scope_to_retrieval(self):
         tool, retrieval = _make_tool(results=[])
-        scope = CorpusScope(name="s", ingestion_strategy="naive_pdf")
+        scope = CorpusScope(ingestion_strategy="naive_pdf")
         tool._scope = scope
 
         tool.run(query="solar criteria")

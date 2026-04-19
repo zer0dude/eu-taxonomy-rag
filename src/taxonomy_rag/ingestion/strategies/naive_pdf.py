@@ -22,13 +22,10 @@ class NaivePDFStrategy:
     """
 
     name = "naive_pdf"
-    description = (
-        "PDFParser (pymupdf plain text) + NaiveChunker "
-        f"(chunk_size=default, overlap=default)"
-    )
+    description = "PDFParser (pymupdf plain text) + NaiveChunker (512 words, 50 overlap)"
 
     def supports(self, file_path: str) -> bool:
-        return file_path.lower().endswith(".pdf")
+        return PDFParser().supports(file_path)
 
     def build_pipeline(self) -> IngestionPipeline:
         return IngestionPipeline(

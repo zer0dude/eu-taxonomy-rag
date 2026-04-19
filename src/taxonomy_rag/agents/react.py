@@ -18,7 +18,7 @@ from taxonomy_rag.readers.base import AttachmentInfo
 from taxonomy_rag.readers.registry import default_registry
 from taxonomy_rag.tools.attachment.read_full import ReadFullDocument
 from taxonomy_rag.tools.base import ToolKit
-from taxonomy_rag.tracing.base import NullTracer
+from taxonomy_rag.tracing.base import NullTracer, Tracer
 
 
 def get_agent() -> "ReActAgent":
@@ -48,9 +48,10 @@ class ReActAgent:
         question: str,
         context: str = "",
         prompt: str = "",
-        attachments: list[AttachmentInfo] = [],
-        tracer: NullTracer = NullTracer(),
+        attachments: list[AttachmentInfo] | None = None,
+        tracer: Tracer = NullTracer(),
     ) -> str:
+        attachments = attachments or []
         path_map = {a.name: a.path for a in attachments}
         toolkit = ToolKit([ReadFullDocument(path_map, self.registry)])
 

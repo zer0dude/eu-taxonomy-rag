@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from taxonomy_rag.readers.base import AttachmentReader
 from taxonomy_rag.readers.pdf import PDFReader
-from taxonomy_rag.readers.spreadsheet import SpreadsheetReader
-from taxonomy_rag.readers.url import URLReader
 
 
 class ReaderRegistry:
@@ -33,9 +31,5 @@ class ReaderRegistry:
 
 
 def default_registry() -> ReaderRegistry:
-    """Return a registry pre-loaded with all available readers.
-
-    Order matters: the first matching reader wins. PDFReader is listed first
-    because PDF is currently the only fully implemented format.
-    """
-    return ReaderRegistry([PDFReader(), SpreadsheetReader(), URLReader()])
+    """Return a registry pre-loaded with all available readers."""
+    return ReaderRegistry([PDFReader()])
