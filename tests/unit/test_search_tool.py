@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from taxonomy_rag.retrieval.base import RetrievalResult
-from taxonomy_rag.retrieval.scope import CorpusScope, NAIVE_PDF_CORPUS
+from taxonomy_rag.retrieval.scope import CorpusScope, NAIVE_CORPUS
 from taxonomy_rag.tools.search.corpus import SearchCorpusTool
 
 
@@ -21,7 +21,7 @@ def _make_retrieval(results: list[RetrievalResult] | None = None):
 
 def _make_tool(results=None):
     retrieval = _make_retrieval(results)
-    scope = NAIVE_PDF_CORPUS
+    scope = NAIVE_CORPUS
     return SearchCorpusTool(retrieval, scope), retrieval
 
 
@@ -116,7 +116,9 @@ class TestSearchCorpusToolRun:
 
         tool.run(query="solar criteria")
 
-        retrieval.retrieve.assert_called_once_with("solar criteria", scope)
+        args = retrieval.retrieve.call_args[0]
+        assert args[0] == "solar criteria"
+        assert args[1] == scope
 
     def test_unknown_document_id_shows_unknown(self):
         results = [

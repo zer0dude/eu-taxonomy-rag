@@ -8,7 +8,7 @@ import pytest
 
 from taxonomy_rag.retrieval.base import RetrievalResult
 from taxonomy_rag.retrieval.naive import NaiveVectorRetrieval
-from taxonomy_rag.retrieval.scope import CorpusScope, NAIVE_PDF_CORPUS
+from taxonomy_rag.retrieval.scope import CorpusScope, NAIVE_CORPUS
 
 
 # ---------------------------------------------------------------------------
@@ -37,9 +37,9 @@ class TestCorpusScope:
         scope = CorpusScope()
         assert scope.to_metadata_filter() is None
 
-    def test_naive_pdf_corpus_constant(self):
-        assert NAIVE_PDF_CORPUS.ingestion_strategy == "naive_pdf"
-        assert NAIVE_PDF_CORPUS.document_type is None
+    def test_naive_corpus_constant(self):
+        assert NAIVE_CORPUS.ingestion_strategy == "naive_pdf"
+        assert NAIVE_CORPUS.document_type is None
 
 
 # ---------------------------------------------------------------------------

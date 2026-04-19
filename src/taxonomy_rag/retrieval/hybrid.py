@@ -7,10 +7,13 @@ from taxonomy_rag.retrieval.scope import CorpusScope
 from taxonomy_rag.tracing.base import NullTracer, Tracer
 
 
-class NaiveVectorRetrieval:
-    """Retrieval primitive: embed query → cosine vector search → RetrievalResult list.
+class HybridRetrieval:
+    """Retrieval: embed query → RRF(BM25 full-text + cosine vector) → RetrievalResult list.
 
-    This class is purely retrieval — no LLM call, no answer generation.
+    Combines two ranked lists via Reciprocal Rank Fusion entirely inside a single
+    SQL CTE (DocumentRepository.hybrid_search). Better than cosine-only for queries
+    with strong keyword signal (specific regulation codes, article numbers, etc.).
+
     Compose with a CorpusScope and wrap in SearchCorpusTool to expose as an agent tool.
     """
 
@@ -19,10 +22,12 @@ class NaiveVectorRetrieval:
         repo: DocumentRepository | None = None,
         embedder: Embedder | None = None,
         top_k: int = 5,
+        rrf_k: int = 60,
     ) -> None:
         self.repo = repo or DocumentRepository()
         self.embedder = embedder or Embedder()
         self.top_k = top_k
+        self.rrf_k = rrf_k
 
     def retrieve(
         self,
@@ -32,7 +37,13 @@ class NaiveVectorRetrieval:
     ) -> list[RetrievalResult]:
         embedding = self.embedder.embed(query)
         metadata_filter = scope.to_metadata_filter() if scope else None
-        docs = self.repo.vector_search(embedding, self.top_k, metadata_filter=metadata_filter)
+        docs = self.repo.hybrid_search(
+            query,
+            embedding,
+            self.top_k,
+            self.rrf_k,
+            metadata_filter=metadata_filter,
+        )
         return [
             RetrievalResult(
                 doc_id=d["id"],

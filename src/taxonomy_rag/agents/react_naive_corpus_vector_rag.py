@@ -1,14 +1,15 @@
-"""ReAct agent with naive vector corpus search.
+"""ReAct agent with cosine vector search over the naively-chunked corpus.
 
 Agent composition:
   - Core loop:       ReAct (AgentLoop / litellm tool-use)
-  - DB retrieval:    SearchCorpusTool(NaiveVectorRetrieval, NAIVE_PDF_CORPUS)
+  - DB retrieval:    SearchCorpusTool(NaiveVectorRetrieval, NAIVE_CORPUS)
+                     tool name: search_naive_corpus_vector
   - Attachment tool: ReadFullDocument (added per-question when attachments present)
   - Default prompt:  prompts/compliance_v1.txt
 
-Naming convention: react_naive_rag
-  react        = AgentLoop ReAct core
-  naive_rag    = NaiveVectorRetrieval scoped to naive_pdf corpus
+Naming convention: react_{ingestion}_{corpus}_{retrieval}_rag
+  naive_corpus = naively-chunked naive_pdf ingestion strategy
+  vector       = cosine vector search (NaiveVectorRetrieval)
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from taxonomy_rag.llm.provider import get_completion_kwargs
 from taxonomy_rag.readers.base import AttachmentInfo
 from taxonomy_rag.readers.registry import default_registry
 from taxonomy_rag.retrieval.naive import NaiveVectorRetrieval
-from taxonomy_rag.retrieval.scope import NAIVE_PDF_CORPUS
+from taxonomy_rag.retrieval.scope import NAIVE_CORPUS
 from taxonomy_rag.tools.attachment.read_full import ReadFullDocument
 from taxonomy_rag.tools.base import ToolKit
 from taxonomy_rag.tools.search.corpus import SearchCorpusTool
@@ -30,22 +31,25 @@ from taxonomy_rag.tracing.base import NullTracer, Tracer
 
 _PROMPT_PATH = Path(__file__).parents[3] / "prompts" / "compliance_v1.txt"
 
+_TOOL_NAME = "search_naive_corpus_vector"
+_TOOL_DESCRIPTION = (
+    "Cosine vector search over the naively-chunked EU Taxonomy corpus (naive_pdf ingestion). "
+    "Returns ranked excerpts by semantic similarity. Use this to retrieve official regulatory "
+    "text before making any compliance claim."
+)
 
-def get_agent() -> "ReactNaiveRagAgent":
+
+def get_agent() -> "ReactNaiveCorpusVectorRagAgent":
     load_dotenv()
-    return ReactNaiveRagAgent()
+    return ReactNaiveCorpusVectorRagAgent()
 
 
-class ReactNaiveRagAgent:
-    """ReAct agent that searches the ingested EU Taxonomy corpus as its primary tool.
+class ReactNaiveCorpusVectorRagAgent:
+    """ReAct agent: cosine vector search over the naively-chunked EU Taxonomy corpus.
 
-    For questions with attachments (e.g. hard_01), ReadFullDocument is added to
-    the toolkit automatically so the agent can read supporting evidence alongside
-    the corpus search results.
-
-    The default system prompt (compliance_v1.txt) requires the agent to cite
-    every claim from retrieved text. Pass ``prompt`` to answer() to override
-    for experimental runs.
+    For questions with attachments, ReadFullDocument is added to the toolkit
+    automatically. The search tool is rebuilt per answer() call so the tracer
+    is correctly injected for token accounting.
     """
 
     _DEFAULT_PROMPT: str = (
@@ -55,8 +59,7 @@ class ReactNaiveRagAgent:
     def __init__(self) -> None:
         self._loop = AgentLoop(completion_kwargs=get_completion_kwargs())
         self.registry = default_registry()
-        retrieval = NaiveVectorRetrieval(top_k=5)
-        self._search_tool = SearchCorpusTool(retrieval, NAIVE_PDF_CORPUS)
+        self._retrieval = NaiveVectorRetrieval(top_k=5)
 
     def answer(
         self,
@@ -69,7 +72,14 @@ class ReactNaiveRagAgent:
         attachments = attachments or []
         system_prompt = prompt or self._DEFAULT_PROMPT
 
-        tools: list = [self._search_tool]
+        search_tool = SearchCorpusTool(
+            self._retrieval,
+            NAIVE_CORPUS,
+            name=_TOOL_NAME,
+            description=_TOOL_DESCRIPTION,
+            tracer=tracer,
+        )
+        tools: list = [search_tool]
         if attachments:
             path_map = {a.name: a.path for a in attachments}
             tools.append(ReadFullDocument(path_map, self.registry))

@@ -8,7 +8,9 @@ The system is built in strict layers. Each layer depends only on the layers belo
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Layer 7 — Agents          agents/                                  │
 │  AgentProtocol, AgentLoop, per-agent composition                    │
-│  react, react_naive_rag, llm_direct, mock                           │
+│  react, react_naive_corpus_vector_rag, react_naive_corpus_hybrid_rag│
+│  react_naive_corpus_advanced_rag, react_naive_corpus_multi_rag      │
+│  llm_direct, mock                                                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 6 — Agent tools     tools/                                   │
 │  Tool protocol, ToolKit, SearchCorpusTool, ReadFullDocument         │
@@ -16,7 +18,7 @@ The system is built in strict layers. Each layer depends only on the layers belo
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 5 — Retrieval       retrieval/                               │
 │  Retriever protocol, RetrievalResult, CorpusScope                   │
-│  NaiveVectorRetrieval → future: HybridRetrieval, AdvancedRetrieval  │
+│  NaiveVectorRetrieval, HybridRetrieval, AdvancedRetrieval           │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 4 — DB              db/                                      │
 │  DocumentRepository — insert, vector_search, hybrid_search, get_all│
@@ -42,7 +44,7 @@ The system is built in strict layers. Each layer depends only on the layers belo
 **Cross-cutting concerns:**
 - `config.py` — `settings` singleton, read everywhere via `from taxonomy_rag.config import settings`
 - `tracing/` — `Tracer` protocol, `FileTracer`, `NullTracer`; passed through every agent call
-- `reference/rag/` — prior-project code kept as reference for implementing `HybridRetrieval` and `AdvancedRetrieval`
+- `reference/rag/` — prior-project code kept as read-only reference (now implemented as `HybridRetrieval` and `AdvancedRetrieval` in `retrieval/`)
 
 ---
 
@@ -56,7 +58,7 @@ Each agent is defined by three explicit components:
 │  Default prompt  prompts/<name>.txt  (baked in; --prompt overrides)│
 │  ToolKit:                                                          │
 │    ┌── DB retrieval tool ──────────────────────────────────────┐   │
-│    │  SearchCorpusTool(retrieval: Retriever, scope: CorpusScope)│   │
+│    │  SearchCorpusTool(retrieval, scope, name, description, tracer)│  │
 │    └───────────────────────────────────────────────────────────┘   │
 │    ┌── Attachment tool (when question has attachments) ─────────┐  │
 │    │  ReadFullDocument(path_map, registry: ReaderRegistry)      │  │
@@ -69,14 +71,27 @@ Each agent is defined by three explicit components:
 
 **Adding a new agent tool:** implement `Tool` protocol in `tools/`, add to ToolKit in the agent.
 
+**Naming convention:** `react_{ingestion}_{corpus}_{retrieval}_rag`
+- `naive_corpus` = naively-chunked `naive_pdf` ingestion strategy
+- `vector` / `hybrid` / `advanced` / `multi` = retrieval method
+- Tool names follow: `search_{ingestion}_{corpus}_{retrieval}`
+- Corpus constant: `NAIVE_CORPUS` (= `CorpusScope(ingestion_strategy="naive_pdf")`)
+
+**SearchCorpusTool** — `name`, `description`, and `tracer` are constructor params (not class constants).
+Rebuild the tool per `answer()` call to inject the current tracer. Retriever instances are stateless
+and can be constructed once in `__init__`.
+
 **Current agents:**
 
-| Agent | Loop | DB tool | Attachment | Default prompt |
+| Agent | Loop | DB tool(s) | Attachment | Default prompt |
 |---|---|---|---|---|
 | `mock` | none | none | none | none |
 | `llm_direct` | none | none | none | none |
 | `react` | ReAct | none | ReadFullDocument | none |
-| `react_naive_rag` | ReAct | SearchCorpusTool (NaiveVectorRetrieval + NAIVE_PDF_CORPUS) | ReadFullDocument | compliance_v1.txt |
+| `react_naive_corpus_vector_rag` | ReAct | `search_naive_corpus_vector` (NaiveVectorRetrieval) | ReadFullDocument | compliance_v1.txt |
+| `react_naive_corpus_hybrid_rag` | ReAct | `search_naive_corpus_hybrid` (HybridRetrieval) | ReadFullDocument | compliance_v1.txt |
+| `react_naive_corpus_advanced_rag` | ReAct | `search_naive_corpus_advanced` (AdvancedRetrieval) | ReadFullDocument | compliance_v1.txt |
+| `react_naive_corpus_multi_rag` | ReAct | `search_naive_corpus_hybrid` + `search_naive_corpus_advanced` | ReadFullDocument | compliance_v1.txt |
 
 ---
 
@@ -131,6 +146,20 @@ or the stricter instruction wins and the agent still refuses. Token usage
 call via `tracer.log_usage()` and surfaced per-iteration in traces, per-question in
 `outcomes.csv`, and as run totals in `metadata.json`. Ollama may return zeros.
 
+**9. SearchCorpusTool must be rebuilt per answer() call to carry the tracer.**
+`SearchCorpusTool` accepts `name`, `description`, and `tracer` as constructor params.
+Because HyDE (`AdvancedRetrieval`) calls the LLM inside `retrieve()`, it needs the
+per-question tracer to log those tokens correctly. Build the tool in `answer()` (not
+`__init__`); the underlying retriever instance is stateless and can be shared across calls.
+HyDE tokens are logged at iteration index 0, which is unused by `AgentLoop` (1-indexed),
+so they appear cleanly as a "pre-retrieval" entry in traces and accumulate in totals.
+
+**10. Corpus scope name must encode the ingestion method, not just "corpus".**
+As more ingestion strategies are added (hierarchical, sentence-level, etc.), the corpus
+constant and tool name must distinguish them. Convention: `NAIVE_CORPUS` / `search_naive_corpus_*`.
+Future: `HIERARCHICAL_CORPUS` / `search_hierarchical_corpus_*`. The `CorpusScope` filter
+still uses `ingestion_strategy="naive_pdf"` internally — the naming is for human/agent clarity.
+
 ---
 
 ## Eval infrastructure
@@ -153,6 +182,10 @@ Each run saves to `runs/{YYYYMMDD}_{HHMMSS}_{agent}_{question_set}/`:
 | 2026-04-13 | react (no RAG) | hard_01 | 3/3 correct — strong baseline |
 | 2026-04-18 | react_naive_rag | simple_v1 | 9/10 — 1 timeout (iteration cap) |
 | 2026-04-18 | react_naive_rag | hard_01 | 1/3 — 2 timeouts (iteration cap) |
+| 2026-04-19 | react_naive_corpus_vector_rag | simple_v1 | 10/10 — v1.1 timeout fix confirmed |
+| 2026-04-19 | react_naive_corpus_hybrid_rag | simple_v1 | 10/10 — new hybrid agent |
+| 2026-04-19 | react_naive_corpus_advanced_rag | simple_v1 | 10/10 — new advanced agent (HyDE+rerank) |
+| 2026-04-19 | react_naive_corpus_multi_rag | simple_v1 | 10/10 — agent used both tools |
 
 Root cause of timeouts: compliance prompt + low iteration cap. See learning #2 above. Fixed in v1.1 — see learning #8 below.
 
@@ -194,10 +227,11 @@ Connect: host `postgres`, port `5432`, db/user/password `taxonomy`.
 
 ---
 
-## Next steps (v1 baseline)
+## Next steps
 
 1. ~~**Fix compliance prompt**~~ — done (v1.1): last-iteration warning + prompt fallback section
-2. **Re-run hard_01 eval** — confirm timeouts are resolved and preliminary answers are labelled correctly
-3. **HybridRetrieval** — implement in `retrieval/hybrid.py` using `reference/rag/hybrid.py` as reference; wire to a new `react_hybrid_rag` agent; compare against `react_naive_rag`
-4. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims
-5. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets, incomplete data)
+2. ~~**Re-run hard_01 eval**~~ — done (v1.1): timeouts resolved, preliminary answers labelled
+3. ~~**HybridRetrieval + AdvancedRetrieval**~~ — done: `retrieval/hybrid.py`, `retrieval/advanced.py`, 3 new agents + multi-tool agent; consistent naming scheme; HyDE tokens tracked at iteration 0
+4. **Comparative eval on hard_01** — run all four RAG agents on hard_01; compare retrieval quality and token cost; HyDE overhead vs. accuracy gain
+5. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims
+6. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets, incomplete data)

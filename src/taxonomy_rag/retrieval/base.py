@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from taxonomy_rag.tracing.base import NullTracer, Tracer
+
 if TYPE_CHECKING:
     from taxonomy_rag.retrieval.scope import CorpusScope
 
@@ -32,6 +34,7 @@ class Retriever(Protocol):
         self,
         query: str,
         scope: "CorpusScope | None" = None,
+        tracer: Tracer = NullTracer(),
     ) -> list[RetrievalResult]:
         """Search for documents relevant to query, optionally scoped to a corpus subset."""
         ...

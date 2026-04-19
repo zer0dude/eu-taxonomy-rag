@@ -2,27 +2,29 @@ from __future__ import annotations
 
 from taxonomy_rag.retrieval.base import Retriever
 from taxonomy_rag.retrieval.scope import CorpusScope
+from taxonomy_rag.tracing.base import NullTracer, Tracer
+
+_DEFAULT_NAME = "search_corpus"
+_DEFAULT_DESCRIPTION = (
+    "Search the ingested EU Taxonomy document corpus for chunks relevant to "
+    "a query. Returns numbered excerpts with document identifier, page range, "
+    "and relevance score. Use this to retrieve official regulatory text before "
+    "making any compliance claim."
+)
 
 
 class SearchCorpusTool:
-    """Agent tool: semantic search over the ingested EU Taxonomy document corpus.
+    """Agent tool: search over a scoped EU Taxonomy document corpus.
 
-    Composes any Retriever implementation with a CorpusScope that restricts
-    which chunks are visible to this tool instance. Returns a formatted string
-    of numbered results, each with document ID, page range, similarity score,
-    and chunk text.
+    name and description are constructor parameters so that multiple instances
+    with different retrieval strategies can coexist in one ToolKit without name
+    collision. The retrieval strategy and corpus scope are also injected, making
+    this class a pure composition point.
 
-    Swap the retrieval argument to change the search strategy without touching
-    the agent or the tool interface.
+    Rebuild per answer() call (passing the current tracer) so that token usage
+    from retrieval-internal LLM calls (e.g. HyDE) is attributed to the run.
     """
 
-    name = "search_corpus"
-    description = (
-        "Search the ingested EU Taxonomy document corpus for chunks relevant to "
-        "a query. Returns numbered excerpts with document identifier, page range, "
-        "and relevance score. Use this to retrieve official regulatory text before "
-        "making any compliance claim."
-    )
     input_schema = {
         "type": "object",
         "properties": {
@@ -41,12 +43,18 @@ class SearchCorpusTool:
         self,
         retrieval: Retriever,
         scope: CorpusScope,
+        name: str = _DEFAULT_NAME,
+        description: str = _DEFAULT_DESCRIPTION,
+        tracer: Tracer = NullTracer(),
     ) -> None:
+        self.name = name
+        self.description = description
         self._retrieval = retrieval
         self._scope = scope
+        self._tracer = tracer
 
     def run(self, query: str) -> str:
-        results = self._retrieval.retrieve(query, self._scope)
+        results = self._retrieval.retrieve(query, self._scope, self._tracer)
         if not results:
             return "No relevant documents found."
 

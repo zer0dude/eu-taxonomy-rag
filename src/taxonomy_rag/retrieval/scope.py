@@ -22,4 +22,4 @@ class CorpusScope:
         return f or None
 
 
-NAIVE_PDF_CORPUS = CorpusScope(ingestion_strategy="naive_pdf")
+NAIVE_CORPUS = CorpusScope(ingestion_strategy="naive_pdf")
