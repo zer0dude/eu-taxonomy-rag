@@ -10,6 +10,7 @@ Read `notes.md` at the start of a session to get oriented quickly.
 
 After the user greenlights tests, update `notes.md` (new learnings, revised next steps)
 **before** committing. Do not commit without a notes update when behaviour or architecture changed.
+Do not commit unless the user gives greenlights.
 
 ---
 

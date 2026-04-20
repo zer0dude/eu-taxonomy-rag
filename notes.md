@@ -146,6 +146,14 @@ or the stricter instruction wins and the agent still refuses. Token usage
 call via `tracer.log_usage()` and surfaced per-iteration in traces, per-question in
 `outcomes.csv`, and as run totals in `metadata.json`. Ollama may return zeros.
 
+**11. HTML report is the right eval review format.**
+`evaluate.py` generates a self-contained `report.html` per run alongside metadata.json and
+outcomes.csv. The HTML embeds marked.js (v15, ~39 KB inline) so agent markdown answers render
+correctly in any browser with no internet access. Reasoning is collapsible via native `<details>`.
+Evaluator scores and notes are persisted to `localStorage` keyed by `run_id + question_id` — no
+server needed, survives page reload. `scripts/report.py` regenerates the HTML for any existing
+run dir. Default `--log-level` is now `full` so tool results are captured in traces automatically.
+
 **9. SearchCorpusTool must be rebuilt per answer() call to carry the tracer.**
 `SearchCorpusTool` accepts `name`, `description`, and `tracer` as constructor params.
 Because HyDE (`AdvancedRetrieval`) calls the LLM inside `retrieve()`, it needs the
@@ -232,6 +240,15 @@ Connect: host `postgres`, port `5432`, db/user/password `taxonomy`.
 1. ~~**Fix compliance prompt**~~ — done (v1.1): last-iteration warning + prompt fallback section
 2. ~~**Re-run hard_01 eval**~~ — done (v1.1): timeouts resolved, preliminary answers labelled
 3. ~~**HybridRetrieval + AdvancedRetrieval**~~ — done: `retrieval/hybrid.py`, `retrieval/advanced.py`, 3 new agents + multi-tool agent; consistent naming scheme; HyDE tokens tracked at iteration 0
-4. **Comparative eval on hard_01** — run all four RAG agents on hard_01; compare retrieval quality and token cost; HyDE overhead vs. accuracy gain
-5. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims
-6. **hard_02 eval set** — realistic messy attachments (URLs, internal spreadsheets, incomplete data)
+4. ~~**Rework eval output**~~ — done: `report.html` generated automatically per run; `scripts/report.py` regenerates for old runs. Markdown rendered, reasoning collapsible, notes persisted in localStorage, export to JSON.
+5. **Comparative eval on hard_01** — run all four RAG agents on hard_01; compare retrieval quality and token cost; HyDE overhead vs. accuracy gain.
+6. **Grounded reasoning eval** — confirm agent cites document sections; do not rely on training memory for regulatory claims.
+
+---
+
+## Ideas (not yet scoped)
+
+- **Realistic / messy eval sets** — questions with too much information, irrelevant documents, mixed attachment types. Naturally coupled with attachment reading improvements below.
+- **Alternative ingestion strategies** — hierarchical chunking, structural chunking, and (distinct category) manually authored natural-language descriptions of graphs so graph content becomes retrievable and LLM-interpretable.
+- **More targeted DB search tools** — let agents scope searches below the full corpus level (by document, section, or type). `CorpusScope` already supports this pattern; new ingestion strategies will need it.
+- **Richer attachment reading** — readers for URLs, spreadsheets, slide decks; tooling for directed partial reads rather than full-document reads only.

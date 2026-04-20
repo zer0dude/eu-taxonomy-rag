@@ -31,7 +31,7 @@ RUNS_DIR = REPO_ROOT / "runs"
 _ATTACHMENT_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".csv"]
 
 _LOG_LEVEL_CHOICES = ["full", "truncated", "metadata", "none"]
-_LOG_LEVEL_DEFAULT = "metadata"
+_LOG_LEVEL_DEFAULT = "full"
 _TRUNCATE_CHARS_DEFAULT = 500
 
 
@@ -303,6 +303,8 @@ def main() -> None:
     total_input_tokens = sum(r["input_tokens"] for r in rows)
     total_output_tokens = sum(r["output_tokens"] for r in rows)
 
+    from taxonomy_rag.eval_report import build_report_html
+
     # Write metadata.json
     metadata = {
         "run_id": run_id,
@@ -347,6 +349,20 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
+    # Generate HTML report
+    traces: dict[str, dict] = {}
+    traces_dir = run_dir / "traces"
+    if traces_dir.exists():
+        for trace_file in sorted(traces_dir.glob("*_trace.json")):
+            with open(trace_file, encoding="utf-8") as f:
+                t = json.load(f)
+            traces[t["question_id"]] = t
+
+    report_html = build_report_html(run_id, metadata, rows, traces)
+    report_path = run_dir / "report.html"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report_html)
+
     # Summary to stdout
     print(f"\nRun:       {run_id}")
     print(f"Agent:     {args.agent}")
@@ -357,6 +373,7 @@ def main() -> None:
     print(f"Output:    {run_dir.relative_to(REPO_ROOT)}/")
     print(f"           +-- metadata.json")
     print(f"           +-- outcomes.csv")
+    print(f"           +-- report.html")
 
 
 if __name__ == "__main__":
