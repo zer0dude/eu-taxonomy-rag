@@ -1,16 +1,20 @@
 # EU Taxonomy RAG
 
-A research and experimentation platform for applying **Retrieval-Augmented Generation (RAG)**
-and **LLM agents** to the **EU Taxonomy for Sustainable Finance**.
+EU sustainability regulation documents — dense, cross-referential, structurally inconsistent
+across delegated acts and guidance notices — are a hard test case for AI retrieval systems.
+Naive chunking loses the regulatory context that makes a passage meaningful. Vector search
+alone misses explicit cross-references between criteria. Without a structured evaluation
+framework, there is no reliable way to know whether a pipeline change actually improved
+anything.
 
-The EU Taxonomy (Regulation 2020/852 and its Climate Delegated Act 2021/2139) is a
-classification system that defines which economic activities qualify as environmentally
-sustainable. Its documents are long, dense, and full of cross-references — a demanding
-test bed for RAG systems.
-
-The goal is not a production system. It is a learning platform: ingestion strategies,
-retrieval methods, and agent designs are swapped in and out to compare their behaviour on
-the same evaluation set.
+This project builds an opinionated ingestion-to-evaluation platform for the
+**EU Taxonomy for Sustainable Finance** (Regulation 2020/852 and its Climate Delegated Act
+2021/2139): a classification framework defining which economic activities qualify as
+environmentally sustainable. The system covers the full pipeline — PDF parsing, chunking,
+embedding, pgvector retrieval, and swappable LLM agent architectures — with a reproducible
+evaluation harness as the central point. Ingestion strategies, retrieval methods, and agent
+designs are designed to be swapped in and out and measured against the same question sets,
+so comparisons are grounded rather than impressionistic.
 
 ---
 
