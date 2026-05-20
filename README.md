@@ -1,7 +1,7 @@
 # EU Taxonomy RAG
 
-EU sustainability regulation documents — dense, cross-referential, structurally inconsistent
-across delegated acts and guidance notices — are a hard test case for AI retrieval systems.
+EU sustainability regulation documents - dense, cross-referential, structurally inconsistent
+across delegated acts and guidance notices - are a hard test case for AI retrieval systems.
 Naive chunking loses the regulatory context that makes a passage meaningful. Vector search
 alone misses explicit cross-references between criteria. Without a structured evaluation
 framework, there is no reliable way to know whether a pipeline change actually improved
@@ -10,11 +10,14 @@ anything.
 This project builds an opinionated ingestion-to-evaluation platform for the
 **EU Taxonomy for Sustainable Finance** (Regulation 2020/852 and its Climate Delegated Act
 2021/2139): a classification framework defining which economic activities qualify as
-environmentally sustainable. The system covers the full pipeline — PDF parsing, chunking,
-embedding, pgvector retrieval, and swappable LLM agent architectures — with a reproducible
-evaluation harness as the central point. Ingestion strategies, retrieval methods, and agent
-designs are designed to be swapped in and out and measured against the same question sets,
-so comparisons are grounded rather than impressionistic.
+environmentally sustainable. The EU Taxonomy's structure mirrors the compliance data challenges 
+facing industrial enterprises: cross-referenced obligations, inconsistent source formatting, 
+and retrieval failures that carry real regulatory consequences. The system covers the 
+full pipeline - PDF parsing, chunking,embedding, pgvector retrieval, and swappable 
+LLM agent architectures - with a reproducibleevaluation harness as the central point. 
+Ingestion strategies, retrieval methods, and agent designs are designed to be swapped in 
+and out and measured against the same question sets, so comparisons are grounded 
+rather than impressionistic.
 
 ---
 
